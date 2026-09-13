@@ -24,6 +24,15 @@ services:
         timeout: 5s
         retries: 5
 
+  redis:
+    image: redis:alpine
+    container_name: redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    networks:
+      - app_net
+
   backend:
     image: notverysmart/vstore-backend:latest
     restart: unless-stopped
@@ -35,6 +44,8 @@ services:
       SECRET_KEY: ${SECRET_KEY}
       AZURE_STORAGE_CONNECTION_STRING: ${AZURE_STORAGE_CONNECTION_STRING}
       PORT: 8080
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
 
     ports:
       - "0.0.0.0:8080:8000"
@@ -44,6 +55,29 @@ services:
     depends_on:
         postgres:
           condition: service_healthy
+        redis:
+          condition: service_started
+
+  worker:
+    image: notverysmart/vstore-backend:latest
+    container_name: vstore_worker
+    restart: unless-stopped
+    command: celery -A app.worker.celery_app worker --loglevel=info
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      SECRET_KEY: ${SECRET_KEY}
+      AZURE_STORAGE_CONNECTION_STRING: ${AZURE_STORAGE_CONNECTION_STRING}
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    networks:
+      - app_net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
 
   frontend:
     image: notverysmart/vstore-frontend:latest
