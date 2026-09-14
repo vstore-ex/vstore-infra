@@ -10,29 +10,45 @@ services:
     container_name: postgres
     restart: unless-stopped
     logging: *default-logging
-
     deploy:
       resources:
         limits:
           cpus: "1.0"
           memory: 1024M
-
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-app}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-
     ports:
       - "127.0.0.1:5432:5432"
-
     volumes:
       - postgres_data:/var/lib/postgresql/data
-
     networks:
       - app_net
-
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-app}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: redis
+    restart: unless-stopped
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - app_net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -41,13 +57,11 @@ services:
     image: notverysmart/vstore-backend:latest
     restart: unless-stopped
     logging: *default-logging
-
     deploy:
       resources:
         limits:
           cpus: "1.5"
           memory: 1024M
-
     environment:
       DATABASE_URL: ${DATABASE_URL}
       ADMIN_EMAIL: ${ADMIN_EMAIL}
@@ -55,15 +69,19 @@ services:
       SECRET_KEY: ${SECRET_KEY}
       AZURE_STORAGE_CONNECTION_STRING: ${AZURE_STORAGE_CONNECTION_STRING}
       PORT: 8080
-
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
+      TRUST_PROXY_HEADERS: ${TRUST_PROXY_HEADERS:-true}
     ports:
       - "127.0.0.1:8080:8000"
-
+    volumes:
+      - ./storage:/app/storage
     networks:
       - app_net
-
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
     healthcheck:
@@ -73,27 +91,51 @@ services:
       retries: 5
       start_period: 15s
 
+  worker:
+    image: notverysmart/vstore-backend:latest
+    container_name: vstore_worker
+    restart: unless-stopped
+    logging: *default-logging
+    command: celery -A app.worker.celery_app worker --loglevel=info
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1024M
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      SECRET_KEY: ${SECRET_KEY}
+      AZURE_STORAGE_CONNECTION_STRING: ${AZURE_STORAGE_CONNECTION_STRING}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
+    volumes:
+      - ./storage:/app/storage
+    networks:
+      - app_net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   frontend:
     image: notverysmart/vstore-frontend:latest
     restart: unless-stopped
     logging: *default-logging
-
     deploy:
       resources:
         limits:
           cpus: "0.5"
           memory: 256M
-
     depends_on:
       backend:
         condition: service_healthy
-
     ports:
       - "0.0.0.0:3000:8080"
-
     volumes:
       - ./config/nginx-frontend.conf:/etc/nginx/conf.d/default.conf:ro
-
     networks:
       - app_net
 
@@ -107,23 +149,18 @@ services:
     image: notverysmart/vstore-admin:latest
     restart: unless-stopped
     logging: *default-logging
-
     deploy:
       resources:
         limits:
           cpus: "0.5"
           memory: 256M
-
     depends_on:
       backend:
         condition: service_healthy
-
     ports:
       - "0.0.0.0:3001:8080"
-
     volumes:
       - ./config/nginx-admin.conf:/etc/nginx/conf.d/default.conf:ro
-
     networks:
       - app_net
 
@@ -139,3 +176,4 @@ networks:
 
 volumes:
   postgres_data:
+  redis_data:
