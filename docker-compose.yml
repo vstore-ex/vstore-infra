@@ -1,13 +1,26 @@
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   postgres:
     image: postgres:17
     container_name: postgres
     restart: unless-stopped
+    logging: *default-logging
+
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1024M
 
     environment:
-      POSTGRES_DB: app
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ${POSTGRES_DB:-app}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
 
     ports:
       - "127.0.0.1:5432:5432"
@@ -19,14 +32,21 @@ services:
       - app_net
 
     healthcheck:
-        test: ["CMD-SHELL", "pg_isready -U postgres -d app"]
-        interval: 5s
-        timeout: 5s
-        retries: 5
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-app}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   backend:
     image: notverysmart/vstore-backend:latest
     restart: unless-stopped
+    logging: *default-logging
+
+    deploy:
+      resources:
+        limits:
+          cpus: "1.5"
+          memory: 1024M
 
     environment:
       DATABASE_URL: ${DATABASE_URL}
@@ -37,20 +57,36 @@ services:
       PORT: 8080
 
     ports:
-      - "0.0.0.0:8080:8000"
+      - "127.0.0.1:8080:8000"
 
     networks:
       - app_net
+
     depends_on:
-        postgres:
-          condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health').read()\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
   frontend:
     image: notverysmart/vstore-frontend:latest
     restart: unless-stopped
+    logging: *default-logging
+
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
 
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
 
     ports:
       - "0.0.0.0:3000:8080"
@@ -61,12 +97,26 @@ services:
     networks:
       - app_net
 
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
   admin:
     image: notverysmart/vstore-admin:latest
     restart: unless-stopped
+    logging: *default-logging
+
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
 
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
 
     ports:
       - "0.0.0.0:3001:8080"
@@ -76,6 +126,12 @@ services:
 
     networks:
       - app_net
+
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
 networks:
   app_net:
