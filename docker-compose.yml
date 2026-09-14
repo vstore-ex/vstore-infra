@@ -1,8 +1,15 @@
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   postgres:
     image: postgres:17
     container_name: postgres
     restart: unless-stopped
+    logging: *default-logging
 
     environment:
       POSTGRES_DB: app
@@ -19,14 +26,17 @@ services:
       - app_net
 
     healthcheck:
-        test: ["CMD-SHELL", "pg_isready -U postgres -d app"]
-        interval: 5s
-        timeout: 5s
-        retries: 5
+      test: ["CMD-SHELL", "pg_isready -U postgres -d app"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   backend:
     image: notverysmart/vstore-backend:latest
     restart: unless-stopped
+    logging: *default-logging
+
+    command: sh -c "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips=*"
 
     environment:
       DATABASE_URL: ${DATABASE_URL}
@@ -41,13 +51,15 @@ services:
 
     networks:
       - app_net
+
     depends_on:
-        postgres:
-          condition: service_healthy
+      postgres:
+        condition: service_healthy
 
   frontend:
     image: notverysmart/vstore-frontend:latest
     restart: unless-stopped
+    logging: *default-logging
 
     depends_on:
       - backend
@@ -64,6 +76,7 @@ services:
   admin:
     image: notverysmart/vstore-admin:latest
     restart: unless-stopped
+    logging: *default-logging
 
     depends_on:
       - backend
