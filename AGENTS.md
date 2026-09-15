@@ -45,9 +45,9 @@ All containers run inside the `app_net` bridge network:
 | Service | Image | Internal Port | Host Port | Health Check | Resource Limits |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **`postgres`** | `postgres:17` | `5432` | `127.0.0.1:5432` | `pg_isready` | 1.0 CPU, 1024 MB |
-| **`backend`** | `notverysmart/vstore-backend:latest` | `8000` | `127.0.0.1:8080` | `GET /health` | 1.5 CPU, 1024 MB |
-| **`frontend`** | `notverysmart/vstore-frontend:latest` | `8080` | `0.0.0.0:3000` | `GET /healthz` | 0.5 CPU, 256 MB |
-| **`admin`** | `notverysmart/vstore-admin:latest` | `8080` | `0.0.0.0:3001` | `GET /healthz` | 0.5 CPU, 256 MB |
+| **`backend`** | `ghcr.io/vstore-ex/vstore:latest` | `8000` | `127.0.0.1:8080` | `GET /health` | 1.5 CPU, 1024 MB |
+| **`frontend`** | `ghcr.io/vstore-ex/vstore-front:latest` | `8080` | `0.0.0.0:3000` | `GET /healthz` | 0.5 CPU, 256 MB |
+| **`admin`** | `ghcr.io/vstore-ex/vstore-admin:latest` | `8080` | `0.0.0.0:3001` | `GET /healthz` | 0.5 CPU, 256 MB |
 
 ---
 
@@ -122,3 +122,16 @@ docker run --rm \
   -v $(pwd)/config/nginx-admin.conf:/etc/nginx/conf.d/default.conf:ro \
   nginx:alpine nginx -t
 ```
+
+### Production Deployment (GHCR Private Images)
+```bash
+# 1. Authenticate Docker with GHCR (one-time on production host, using PAT with read:packages)
+echo "$CR_PAT" | docker login ghcr.io -u <GITHUB_USERNAME> --password-stdin
+
+# 2. Pull the latest images from GHCR
+docker compose pull
+
+# 3. Apply updates with zero orphan containers
+docker compose up -d --remove-orphans
+```
+

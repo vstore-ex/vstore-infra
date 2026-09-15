@@ -54,7 +54,7 @@ services:
       retries: 5
 
   backend:
-    image: notverysmart/vstore-backend:latest
+    image: ${BACKEND_IMAGE:-ghcr.io/vstore-ex/vstore:latest}
     restart: unless-stopped
     logging: *default-logging
     deploy:
@@ -92,7 +92,7 @@ services:
       start_period: 15s
 
   worker:
-    image: notverysmart/vstore-backend:latest
+    image: ${BACKEND_IMAGE:-ghcr.io/vstore-ex/vstore:latest}
     container_name: vstore_worker
     restart: unless-stopped
     logging: *default-logging
@@ -121,7 +121,7 @@ services:
         condition: service_healthy
 
   frontend:
-    image: notverysmart/vstore-frontend:latest
+    image: ${FRONTEND_IMAGE:-ghcr.io/vstore-ex/vstore-front:latest}
     restart: unless-stopped
     logging: *default-logging
     deploy:
@@ -146,7 +146,7 @@ services:
       retries: 3
 
   admin:
-    image: notverysmart/vstore-admin:latest
+    image: ${ADMIN_IMAGE:-ghcr.io/vstore-ex/vstore-admin:latest}
     restart: unless-stopped
     logging: *default-logging
     deploy:
