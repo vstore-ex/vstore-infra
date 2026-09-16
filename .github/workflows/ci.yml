@@ -46,9 +46,10 @@ jobs:
     needs: [validate-compose, validate-nginx]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment: production
     concurrency: production
     steps:
-      - name: Pull and restart stack via SSH
+      - name: Sync config, pull and restart stack via SSH
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.SSH_HOST }}
@@ -56,9 +57,54 @@ jobs:
           key: ${{ secrets.SSH_KEY || secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT || 22 }}
           script: |
-            set -e
-            cd ${{ secrets.DEPLOY_PATH || '/opt/vstore' }}
-            git pull --ff-only
+            set -euo pipefail
+            DEPLOY_PATH="${{ secrets.DEPLOY_PATH || '/opt/vstore' }}"
+            cd "$DEPLOY_PATH"
+
+            # Acquire deployment lock to prevent race conditions with other repositories
+            exec 200>"$DEPLOY_PATH/.deploy.lock"
+            echo "==> Acquiring deployment lock..."
+            flock -w 300 200 || { echo "ERROR: Timeout waiting for deployment lock!"; exit 1; }
+
+            echo "==> Synchronizing repository state from origin/main..."
+            git fetch origin main
+            git reset --hard origin/main
+
+            echo "==> Pulling container images..."
             docker compose pull
+
+            echo "==> Applying database migrations..."
+            docker compose run --rm --no-deps backend alembic upgrade head
+
+            echo "==> Restarting entire stack..."
             docker compose up -d --remove-orphans
+
+            echo "==> Verifying stack services health..."
+            RETRIES=20
+            HEALTHY=false
+            for i in $(seq 1 $RETRIES); do
+              B_OK=0; F_OK=0; A_OK=0
+              curl -sf http://127.0.0.1:8080/health > /dev/null 2>&1 && B_OK=1
+              curl -sf http://127.0.0.1:3000/healthz > /dev/null 2>&1 && F_OK=1
+              curl -sf http://127.0.0.1:3001/healthz > /dev/null 2>&1 && A_OK=1
+
+              if [ "$B_OK" -eq 1 ] && [ "$F_OK" -eq 1 ] && [ "$A_OK" -eq 1 ]; then
+                echo "All services (backend, frontend, admin) are healthy!"
+                HEALTHY=true
+                break
+              fi
+              echo "Waiting for all services to become healthy ($i/$RETRIES)..."
+              sleep 3
+            done
+
+            if [ "$HEALTHY" != "true" ]; then
+              echo "ERROR: Stack health check failed!"
+              docker compose ps
+              docker compose logs --tail=50
+              exit 1
+            fi
+
+            echo "==> Cleaning up unused images..."
             docker image prune -f
+
+            echo "==> Infra stack deployment completed successfully."
