@@ -40,3 +40,25 @@ jobs:
             --add-host backend:127.0.0.1 \
             -v ${{ github.workspace }}/config/nginx-admin.conf:/etc/nginx/conf.d/default.conf:ro \
             nginx:alpine nginx -t
+
+  deploy:
+    name: Deploy Stack via SSH
+    needs: [validate-compose, validate-nginx]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    concurrency: production
+    steps:
+      - name: Pull and restart stack via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY || secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          script: |
+            set -e
+            cd ${{ secrets.DEPLOY_PATH || '/opt/vstore' }}
+            git pull --ff-only
+            docker compose pull
+            docker compose up -d --remove-orphans
+            docker image prune -f
