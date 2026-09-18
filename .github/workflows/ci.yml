@@ -57,7 +57,31 @@ jobs:
     environment: production
     concurrency: production
     steps:
+      - name: Check SSH deployment readiness
+        id: check-ssh
+        run: |
+          if [ -z "${SSH_HOST}" ] || [ -z "${SSH_KEY}" ]; then
+            echo "::warning::SSH_HOST or SSH_KEY is not configured in secrets. Skipping deployment."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "==> Checking if production host ${SSH_HOST}:${SSH_PORT} is reachable..."
+          if ! nc -z -w 5 "${SSH_HOST}" "${SSH_PORT}" 2>/dev/null && ! timeout 5 bash -c "</dev/tcp/${SSH_HOST}/${SSH_PORT}" 2>/dev/null; then
+            echo "::warning::Production server (${SSH_HOST}:${SSH_PORT}) is offline or unreachable. Skipping deployment."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "==> Production server is online and reachable."
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_KEY: ${{ secrets.SSH_KEY || secrets.SSH_PRIVATE_KEY }}
+          SSH_PORT: ${{ secrets.SSH_PORT || 22 }}
+
       - name: Sync config, pull and restart stack via SSH
+        if: steps.check-ssh.outputs.skip != 'true'
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.SSH_HOST }}
