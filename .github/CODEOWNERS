@@ -1,0 +1,7 @@
+# ==============================================================================
+# Code Owners for vstore-infra
+# ==============================================================================
+# All infrastructure, deployment orchestration, and Nginx configurations
+# are managed exclusively by DevOps.
+
+* @dumpe2fs
