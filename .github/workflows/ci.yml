@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   validate-compose:
@@ -87,17 +92,18 @@ jobs:
             RETRIES=20
             HEALTHY=false
             for i in $(seq 1 $RETRIES); do
-              B_OK=0; F_OK=0; A_OK=0
+              B_OK=0; F_OK=0; A_OK=0; PROXY_OK=0
               curl -sf http://127.0.0.1:8080/health > /dev/null 2>&1 && B_OK=1
               curl -sf http://127.0.0.1:3000/healthz > /dev/null 2>&1 && F_OK=1
               curl -sf http://127.0.0.1:3001/healthz > /dev/null 2>&1 && A_OK=1
+              curl -sf http://127.0.0.1:3000/api/v1/games/ > /dev/null 2>&1 && PROXY_OK=1
 
-              if [ "$B_OK" -eq 1 ] && [ "$F_OK" -eq 1 ] && [ "$A_OK" -eq 1 ]; then
-                echo "All services (backend, frontend, admin) are healthy!"
+              if [ "$B_OK" -eq 1 ] && [ "$F_OK" -eq 1 ] && [ "$A_OK" -eq 1 ] && [ "$PROXY_OK" -eq 1 ]; then
+                echo "All services and proxy routes (backend, frontend, admin) are healthy!"
                 HEALTHY=true
                 break
               fi
-              echo "Waiting for all services to become healthy ($i/$RETRIES)..."
+              echo "Waiting for all services and proxy routes to become healthy ($i/$RETRIES)..."
               sleep 3
             done
 
