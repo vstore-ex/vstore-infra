@@ -94,10 +94,16 @@ jobs:
             # registry cannot resolve.
             CONTAINER_ID=$(docker compose ps -q "$PRIMARY_SERVICE" 2>/dev/null || true)
             if [ -n "$CONTAINER_ID" ]; then
-              PREV_IMAGE=$(docker inspect --format='{{index .RepoDigests 0}}' "$CONTAINER_ID" 2>/dev/null || true)
+              # RepoDigests lives on the IMAGE, not on the container object:
+              # inspect the container's image ID, then the image itself.
+              IMG_ID=$(docker inspect --format='{{.Image}}' "$CONTAINER_ID" 2>/dev/null || true)
+              PREV_IMAGE=""
+              if [ -n "$IMG_ID" ]; then
+                PREV_IMAGE=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMG_ID" 2>/dev/null || true)
+              fi
               if [ -z "$PREV_IMAGE" ]; then
-                echo "ERROR: Running container $PRIMARY_SERVICE has no registry digest (RepoDigests empty — locally built image?)."
-                echo "ERROR: Refusing deploy: no valid rollback target."
+                echo "ERROR: Running container $PRIMARY_SERVICE uses an image with no registry digest (RepoDigests empty — locally built image?)."
+                echo "ERROR: Refusing deploy: no valid rollback target. Fix: docker compose pull && docker compose up -d --force-recreate $SERVICES"
                 exit 1
               fi
             else
