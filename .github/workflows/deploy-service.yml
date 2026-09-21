@@ -91,9 +91,17 @@ jobs:
             # Registry digest (name@sha256:...) — a valid compose image ref for
             # rollback. {{.Image}} would give the local content ID, which the
             # registry cannot resolve.
-            PREV_IMAGE=$(docker inspect --format='{{index .RepoDigests 0}}' "$(docker compose ps -q "$PRIMARY_SERVICE" 2>/dev/null)" 2>/dev/null || true)
-            if [ -z "$PREV_IMAGE" ]; then
-              PREV_IMAGE=$(docker inspect --format='{{.Image}}' "$(docker compose ps -q "$PRIMARY_SERVICE" 2>/dev/null)" 2>/dev/null || true)
+            CONTAINER_ID=$(docker compose ps -q "$PRIMARY_SERVICE" 2>/dev/null || true)
+            if [ -n "$CONTAINER_ID" ]; then
+              PREV_IMAGE=$(docker inspect --format='{{index .RepoDigests 0}}' "$CONTAINER_ID" 2>/dev/null || true)
+              if [ -z "$PREV_IMAGE" ]; then
+                echo "ERROR: Running container $PRIMARY_SERVICE has no registry digest (RepoDigests empty — locally built image?)."
+                echo "ERROR: Refusing deploy: no valid rollback target."
+                exit 1
+              fi
+            else
+              PREV_IMAGE=""
+              echo "==> No running $PRIMARY_SERVICE found (fresh deploy); no rollback target needed."
             fi
             echo "==> Deploying $SERVICES: $IMAGE (previous: ${PREV_IMAGE:-none})"
 
