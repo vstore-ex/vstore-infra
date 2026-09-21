@@ -67,7 +67,8 @@ jobs:
           fingerprint: ${{ secrets.SSH_FINGERPRINT }}
           script: |
             set -euo pipefail
-            DEPLOY_PATH="${{ secrets.DEPLOY_PATH || '/opt/vstore' }}"
+            DEPLOY_PATH="${{ secrets.DEPLOY_PATH }}"
+            DEPLOY_PATH="${DEPLOY_PATH:-$HOME/vstore}"
             cd "$DEPLOY_PATH"
 
             exec 200>"$DEPLOY_PATH/.deploy.lock"
