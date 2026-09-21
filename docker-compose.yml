@@ -114,6 +114,10 @@ services:
     environment:
       <<: *backend-env
       AUTO_MIGRATE: "false"
+    # Worker runs celery (no HTTP server) but shares the backend image whose
+    # HEALTHCHECK probes HTTP :8000 — without this compose --wait fails on it.
+    healthcheck:
+      disable: true
     volumes:
       - ./storage:/app/storage
     networks:
