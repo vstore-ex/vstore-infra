@@ -46,7 +46,7 @@ All services run in an isolated bridge network (`app_net`). Reverse proxy (nginx
 | `frontend` | `ghcr.io/vstore-ex/vstore-front` | `0.0.0.0:3000` | `GET /healthz` | 0.5 CPU, 256M |
 | `admin` | `ghcr.io/vstore-ex/vstore-admin` | `0.0.0.0:3001` | `GET /healthz` | 0.5 CPU, 256M |
 | `backend` | `ghcr.io/vstore-ex/vstore` | `127.0.0.1:8080` | `GET /health` | 1.5 CPU, 1024M |
-| `worker` | `ghcr.io/vstore-ex/vstore` | — | `depends_on` only | 1.0 CPU, 1024M |
+| `worker` | `ghcr.io/vstore-ex/vstore` | — | disabled (celery serves no HTTP; the image-inherited HEALTHCHECK probes `:8000`) | 1.0 CPU, 1024M |
 | `postgres` | `postgres:17` | `127.0.0.1:5432` | `pg_isready` | 1.0 CPU, 1024M |
 | `redis` | `redis:7.2-alpine` | `127.0.0.1:6379` | `redis-cli ping` | 0.5 CPU, 256M |
 
@@ -54,7 +54,7 @@ All services run in an isolated bridge network (`app_net`). Reverse proxy (nginx
 
 ```bash
 cp .env.example .env   # fill in secrets; POSTGRES_PASSWORD / SECRET_KEY / etc. are fail-fast
-mkdir -p storage/media && chmod -R 775 storage   # backend runs as UID 10001
+mkdir -p storage/media && sudo chown -R 10001:10001 storage   # bind mount must be writable by appuser (UID 10001); chmod alone is NOT enough
 docker compose pull
 docker compose up -d
 docker compose ps      # wait until all services report healthy
@@ -83,12 +83,21 @@ docker compose restart backend    # restart one service
 docker compose config --quiet     # validate config before PRs
 ```
 
+**Offline production host** (the VM is expected to be off at times): deploy jobs **fail** when the host is unreachable — that is intentional, no fake-green CD. On boot the containers come back automatically (`restart: unless-stopped`). If commits were merged while the host was off, re-apply them with Actions → Infra CI → **Run workflow** (or *Re-run failed jobs* of the failed run — note: a re-run reuses the originally resolved reusable-workflow version; prefer *Run workflow* after callee changes).
+
 ## 7. CI/CD
 
 `.github/workflows/`:
 
 * `ci.yml` — validates the compose file, then syncs config to the production host over SSH (`docker compose up -d --wait`, flock-serialized, git-based rollback of config).
 * `build-and-push.yml` — **reusable** build job (`workflow_call`) used by all app repos: Buildx + GHA cache, Trivy scan, push to the caller's GHCR namespace, outputs the image digest.
-* `deploy-service.yml` — **reusable** deploy job used by all app repos: pulls the digest-pinned image, optionally runs Alembic migrations behind a `pg_dump` snapshot, `up -d --wait`, health-check gate, automated rollback to the previous image digest.
+* `deploy-service.yml` — **reusable** deploy job used by all app repos: refuses to run if the currently running container's image has no registry digest (`RepoDigests` — no valid rollback target), pulls the digest-pinned image, optionally runs Alembic migrations behind a `pg_dump` snapshot, `up -d --wait`, health-check gate, automated rollback to the previous image digest (image only — schema restore is manual, commands are printed by the job).
 
-App repos call these via `uses: vstore-ex/vstore-infra/.github/workflows/<file>.yml@main` with `secrets: inherit`. Requires the org setting *Actions → Allow reusable workflows from private repositories* for this org.
+App repos call these via `uses: vstore-ex/vstore-infra/.github/workflows/<file>.yml@main` with `secrets: inherit`. Requires the org setting *Actions → Allow reusable workflows from private repositories* for this org — without it every cross-repo call fails at workflow startup. This setting is the single dependency of the whole deduplicated CI layout.
+
+## 8. Production Host Layout
+
+* Deploy directory: **`~/vstore`** (SSH user's home; override with the `DEPLOY_PATH` secret) — must be a git clone of this repo; the deploy does `git fetch origin main && git reset --hard origin/main` inside it.
+* Env file: `~/vstore/.env` — must define all fail-fast variables (see §5) plus `AZURE_STORAGE_CONNECTION_STRING` if Blob storage is used. `DATABASE_URL` must reference the compose service name (`@postgres:5432/...`), never `127.0.0.1`/`localhost`, and a database name that actually exists on the `postgres_data` volume (`POSTGRES_DB` only applies at first-volume init).
+* GHCR: the host must be authenticated (`docker login ghcr.io` with a PAT holding `read:packages`) to pull private images.
+* Docker Compose **v2 plugin** (`docker compose ...`) is required on the host; the standalone legacy `docker-compose` is not used.
