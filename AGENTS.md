@@ -20,7 +20,7 @@ Reverse proxy (nginx) lives **inside the `frontend`/`admin` images** — this re
 | `postgres` | `postgres:17` | `127.0.0.1:5432` | `pg_isready` |
 | `redis` | `redis:7.2-alpine` | `127.0.0.1:6379` | `redis-cli ping` |
 | `backend` | `ghcr.io/vstore-ex/vstore` | `127.0.0.1:8080` | `GET /health` |
-| `worker` | `ghcr.io/vstore-ex/vstore` | — | `depends_on` only |
+| `worker` | `ghcr.io/vstore-ex/vstore` | — | healthcheck **disabled** (celery serves no HTTP; the image-inherited HEALTHCHECK probes `:8000` and would permanently report unhealthy) |
 | `frontend` | `ghcr.io/vstore-ex/vstore-front` | `0.0.0.0:3000` | `GET /healthz` |
 | `admin` | `ghcr.io/vstore-ex/vstore-admin` | `0.0.0.0:3001` | `GET /healthz` |
 
@@ -39,11 +39,17 @@ Reverse proxy (nginx) lives **inside the `frontend`/`admin` images** — this re
 ### 🔒 4. Container Hardening
 - App services carry `cap_drop: [ALL]` + `no-new-privileges` (see `x-hardening` anchor). New app services must include the anchor. PostgreSQL/Redis are exempt (privileged init).
 
-### 🔄 5. Image Pinning in Deploys
+### 🔄 5. Rollback Preflight & Image Pinning
 - App deploys pin exact digests by exporting `*_IMAGE` over `.env` (shell env wins in Compose interpolation). Never rely on `:latest` for a deploy or a rollback.
+- The deploy preflight refuses to run if the current container's image has no `RepoDigests` (no valid rollback target). `RepoDigests` lives on the **image** — it must be read via two-step inspect (container `.Image` → image). Do not "simplify" this back to a single inspect.
+- Rollback restores the container image only. DB schema is never downgraded automatically; the deploy job prints the snapshot-restore and `alembic downgrade` paths.
 
 ### 🔄 6. Migration Ownership
 - Alembic migrations run in the app repo's deploy job (`deploy-service.yml`, `run-migrations: true`) behind a `pg_dump` snapshot. Worker sets `AUTO_MIGRATE=false`. Do not add `command: alembic upgrade ...` to compose.
+- Every model change requires a migration in the same PR — prod has already been bitten by model columns with no migration (schema drift, found via `alembic check`).
+
+### 🔒 7. Offline Host
+- Deploy jobs **fail** when the production host is unreachable — no skip-to-green. The VM is expected to be off at times; on boot containers return via `restart: unless-stopped`. Missed main-pushes are re-applied via Actions → Run workflow (re-run reuses the originally resolved reusable workflow version — prefer a fresh dispatch after callee changes).
 
 ## 4. Runbook
 
@@ -60,5 +66,6 @@ This repo has no build contexts — `docker compose up --build` is invalid here.
 ## 5. Deployment Model
 
 - App repos: `ci.yml` calls `vstore-infra/.github/workflows/build-and-push.yml@main` then `deploy-service.yml@main` (`secrets: inherit`). Digest-pinned, flock-serialized, health-gated, auto-rollback to previous digest.
-- This repo: `ci.yml` validates compose, then SSH-syncs config (`git reset --hard origin/main` + `docker compose up -d --wait`).
-- Requires org setting: *Actions → Allow reusable workflows from private repositories*.
+- This repo: `ci.yml` validates compose, then SSH-syncs config (`git reset --hard origin/main` + `docker compose up -d --wait`) in **`~/vstore`** on the host (override with `DEPLOY_PATH` secret) — that directory must remain a clean git clone of this repo.
+- Host preconditions: Docker Compose **v2 plugin**, `docker login ghcr.io` (PAT with `read:packages`), `~/vstore/.env` with all fail-fast variables (`DATABASE_URL` must use the service-name host `@postgres:5432/...` and an existing database name; `POSTGRES_DB` only applies at first-volume init), storage dir owned by UID `10001`.
+- Requires org setting: *Actions → Allow reusable workflows from private repositories* — single dependency of the deduplicated CI; without it every cross-repo call fails at startup.
