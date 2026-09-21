@@ -68,7 +68,9 @@ jobs:
         with:
           image-ref: "local-image:scan"
           format: "table"
-          exit-code: "0"
+          # Hard quality gate: build fails on actionable vulns.
+          # ignore-unfixed excludes vulnerabilities without an available fix.
+          exit-code: "1"
           ignore-unfixed: true
           vuln-type: "os,library"
           severity: "CRITICAL,HIGH"

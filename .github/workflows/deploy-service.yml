@@ -59,14 +59,11 @@ jobs:
           fi
 
           if ! nc -z -w 5 "${SSH_HOST}" "${SSH_PORT}" 2>/dev/null; then
-            echo "::warning::Production server (${SSH_HOST}:${SSH_PORT}) is offline. Skipping deployment."
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            exit 0
+            echo "::error::Production server (${SSH_HOST}:${SSH_PORT}) is offline. Deployment FAILED."
+            exit 1
           fi
-          echo "skip=false" >> "$GITHUB_OUTPUT"
 
       - name: Pull, restart and verify via SSH
-        if: steps.check-ssh.outputs.skip != 'true'
         uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17 # v1.2.0
         env:
           IMAGE: ${{ inputs.image }}
@@ -91,7 +88,13 @@ jobs:
             flock -w 300 200 || { echo "ERROR: Timeout waiting for deployment lock!"; exit 1; }
 
             PRIMARY_SERVICE="${SERVICES%% *}"
-            PREV_IMAGE=$(docker inspect --format='{{.Image}}' "$(docker compose ps -q "$PRIMARY_SERVICE" 2>/dev/null)" 2>/dev/null || true)
+            # Registry digest (name@sha256:...) — a valid compose image ref for
+            # rollback. {{.Image}} would give the local content ID, which the
+            # registry cannot resolve.
+            PREV_IMAGE=$(docker inspect --format='{{index .RepoDigests 0}}' "$(docker compose ps -q "$PRIMARY_SERVICE" 2>/dev/null)" 2>/dev/null || true)
+            if [ -z "$PREV_IMAGE" ]; then
+              PREV_IMAGE=$(docker inspect --format='{{.Image}}' "$(docker compose ps -q "$PRIMARY_SERVICE" 2>/dev/null)" 2>/dev/null || true)
+            fi
             echo "==> Deploying $SERVICES: $IMAGE (previous: ${PREV_IMAGE:-none})"
 
             export "$IMAGE_VAR=$IMAGE"
@@ -152,9 +155,13 @@ jobs:
                 echo "==> Rolling back to previous image: $PREV_IMAGE"
                 export "$IMAGE_VAR=$PREV_IMAGE"
                 docker compose up -d --no-deps --wait $SERVICES
-                echo "==> Container image rolled back. Database schema NOT downgraded automatically."
+                echo "==> Container image rolled back. SCOPE OF AUTOMATIC ROLLBACK IS THE IMAGE ONLY."
+                echo "==> Database schema is NOT downgraded automatically."
                 if [ "$RUN_MIGRATIONS" = "true" ] && [ "$PREV_MIGRATION" != "unknown" ]; then
-                  echo "==> To downgrade schema manually: alembic downgrade $PREV_MIGRATION (snapshot: ${BACKUP_FILE:-n/a})"
+                  echo "==> Options if the old image fails against the new schema:"
+                  echo "    1. Manual schema restore from snapshot (DESTRUCTIVE, replaces current data):"
+                  echo "       gunzip -c ${BACKUP_FILE:-<snapshot>} | docker compose exec -T postgres psql -U \$POSTGRES_USER \$POSTGRES_DB"
+                  echo "    2. alembic downgrade $PREV_MIGRATION (if the revision supports downgrade)"
                 fi
               else
                 echo "==> No previous image recorded, skipping rollback."
