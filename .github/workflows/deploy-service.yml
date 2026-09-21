@@ -1,0 +1,184 @@
+name: Deploy Service via SSH
+
+# Reusable deploy job for all VStore repos.
+# Caller requirements:
+#   - call with `secrets: inherit` (SSH_HOST, SSH_KEY or SSH_PRIVATE_KEY,
+#     SSH_USER, SSH_PORT, SSH_FINGERPRINT, DEPLOY_PATH)
+#   - the vstore-infra reusable workflow must be allowed by the org setting
+#     "Allow reusable workflows from private repositories" (same org).
+# Deploys the exact image digest passed in `image`, rolls back to the
+# previously running image digest if the post-deploy health check fails.
+
+on:
+  workflow_call:
+    inputs:
+      services:
+        description: "Space-separated compose services to redeploy (e.g. 'backend worker')"
+        type: string
+        required: true
+      image:
+        description: "Immutable image reference (name@sha256 digest) from the build job"
+        type: string
+        required: true
+      image-env-var:
+        description: "Compose interpolation variable that pins the image (BACKEND_IMAGE, FRONTEND_IMAGE, ADMIN_IMAGE)"
+        type: string
+        required: true
+      health-url:
+        description: "URL curled on the host to verify the deployment end to end"
+        type: string
+        required: true
+      run-migrations:
+        description: "Run alembic upgrade with a pre-deploy pg_dump snapshot (backend only)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy via SSH
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment:
+      name: production
+      url: ${{ vars.PRODUCTION_URL }}
+    concurrency: production
+    steps:
+      - name: Check SSH deployment readiness
+        id: check-ssh
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_KEY: ${{ secrets.SSH_KEY || secrets.SSH_PRIVATE_KEY }}
+          SSH_PORT: ${{ secrets.SSH_PORT || 22 }}
+        run: |
+          if [ -z "${SSH_HOST}" ] || [ -z "${SSH_KEY}" ]; then
+            echo "::error::SSH_HOST or SSH_KEY is not configured in secrets. Deployment cannot proceed."
+            exit 1
+          fi
+
+          if ! nc -z -w 5 "${SSH_HOST}" "${SSH_PORT}" 2>/dev/null; then
+            echo "::error::Production server (${SSH_HOST}:${SSH_PORT}) is offline. Deployment FAILED."
+            exit 1
+          fi
+
+      - name: Pull, restart and verify via SSH
+        uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17 # v1.2.0
+        env:
+          IMAGE: ${{ inputs.image }}
+          SERVICES: ${{ inputs.services }}
+          IMAGE_VAR: ${{ inputs.image-env-var }}
+          HEALTH_URL: ${{ inputs.health-url }}
+          RUN_MIGRATIONS: ${{ inputs.run-migrations }}
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY || secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          fingerprint: ${{ secrets.SSH_FINGERPRINT }}
+          envs: IMAGE,SERVICES,IMAGE_VAR,HEALTH_URL,RUN_MIGRATIONS
+          script: |
+            set -euo pipefail
+            DEPLOY_PATH="${{ secrets.DEPLOY_PATH }}"
+            DEPLOY_PATH="${DEPLOY_PATH:-$HOME/vstore}"
+            cd "$DEPLOY_PATH"
+
+            exec 200>"$DEPLOY_PATH/.deploy.lock"
+            echo "==> Acquiring deployment lock..."
+            flock -w 300 200 || { echo "ERROR: Timeout waiting for deployment lock!"; exit 1; }
+
+            PRIMARY_SERVICE="${SERVICES%% *}"
+            # Registry digest (name@sha256:...) — a valid compose image ref for
+            # rollback. {{.Image}} would give the local content ID, which the
+            # registry cannot resolve.
+            CONTAINER_ID=$(docker compose ps -q "$PRIMARY_SERVICE" 2>/dev/null || true)
+            if [ -n "$CONTAINER_ID" ]; then
+              PREV_IMAGE=$(docker inspect --format='{{index .RepoDigests 0}}' "$CONTAINER_ID" 2>/dev/null || true)
+              if [ -z "$PREV_IMAGE" ]; then
+                echo "ERROR: Running container $PRIMARY_SERVICE has no registry digest (RepoDigests empty — locally built image?)."
+                echo "ERROR: Refusing deploy: no valid rollback target."
+                exit 1
+              fi
+            else
+              PREV_IMAGE=""
+              echo "==> No running $PRIMARY_SERVICE found (fresh deploy); no rollback target needed."
+            fi
+            echo "==> Deploying $SERVICES: $IMAGE (previous: ${PREV_IMAGE:-none})"
+
+            export "$IMAGE_VAR=$IMAGE"
+            echo "==> Pulling image..."
+            docker compose pull $SERVICES
+
+            if [ "$RUN_MIGRATIONS" = "true" ]; then
+              PREV_MIGRATION=$(docker compose run --rm --no-deps backend alembic current 2>/dev/null || echo "unknown")
+              echo "==> Current Alembic revision: $PREV_MIGRATION"
+
+              echo "==> Creating pre-deploy database snapshot..."
+              mkdir -p "$DEPLOY_PATH/backups"
+              BACKUP_FILE="$DEPLOY_PATH/backups/pre_deploy_$(date +%Y%m%d_%H%M%S).sql.gz"
+              if docker compose exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' | gzip > "${BACKUP_FILE}.tmp"; then
+                BACKUP_SIZE=$(stat -c%s "${BACKUP_FILE}.tmp" 2>/dev/null || echo 0)
+                if [ "$BACKUP_SIZE" -gt 200 ]; then
+                  mv "${BACKUP_FILE}.tmp" "$BACKUP_FILE"
+                  ls -t "$DEPLOY_PATH/backups"/pre_deploy_*.sql.gz 2>/dev/null | tail -n +6 | xargs rm -f 2>/dev/null || true
+                  echo "==> Snapshot created: $BACKUP_FILE"
+                else
+                  rm -f "${BACKUP_FILE}.tmp"
+                  echo "ERROR: Database snapshot is empty ($BACKUP_SIZE bytes). Halting deploy."
+                  exit 1
+                fi
+              else
+                rm -f "${BACKUP_FILE}.tmp"
+                echo "ERROR: pg_dump failed. Halting deploy before migrations."
+                exit 1
+              fi
+
+              echo "==> Applying database migrations..."
+              docker compose run --rm --no-deps backend alembic upgrade head
+            fi
+
+            echo "==> Restarting $SERVICES..."
+            HEALTHY=true
+            if ! docker compose up -d --no-deps --wait $SERVICES; then
+              HEALTHY=false
+            fi
+
+            if [ "$HEALTHY" = "true" ]; then
+              echo "==> Verifying health: $HEALTH_URL"
+              RETRIES=15
+              for i in $(seq 1 $RETRIES); do
+                if curl -sf "$HEALTH_URL" > /dev/null 2>&1; then
+                  break
+                fi
+                echo "Waiting for health check ($i/$RETRIES)..."
+                sleep 3
+                [ "$i" -eq "$RETRIES" ] && HEALTHY=false
+              done
+            fi
+
+            if [ "$HEALTHY" != "true" ]; then
+              echo "ERROR: Health check failed for $SERVICES!"
+              docker compose logs --tail=50 $SERVICES
+              if [ -n "$PREV_IMAGE" ]; then
+                echo "==> Rolling back to previous image: $PREV_IMAGE"
+                export "$IMAGE_VAR=$PREV_IMAGE"
+                docker compose up -d --no-deps --wait $SERVICES
+                echo "==> Container image rolled back. SCOPE OF AUTOMATIC ROLLBACK IS THE IMAGE ONLY."
+                echo "==> Database schema is NOT downgraded automatically."
+                if [ "$RUN_MIGRATIONS" = "true" ] && [ "$PREV_MIGRATION" != "unknown" ]; then
+                  echo "==> Options if the old image fails against the new schema:"
+                  echo "    1. Manual schema restore from snapshot (DESTRUCTIVE, replaces current data):"
+                  echo "       gunzip -c ${BACKUP_FILE:-<snapshot>} | docker compose exec -T postgres psql -U \$POSTGRES_USER \$POSTGRES_DB"
+                  echo "    2. alembic downgrade $PREV_MIGRATION (if the revision supports downgrade)"
+                fi
+              else
+                echo "==> No previous image recorded, skipping rollback."
+              fi
+              exit 1
+            fi
+
+            echo "==> Cleaning up unused images..."
+            docker image prune -f
+
+            echo "==> Deployment of $SERVICES completed successfully."
