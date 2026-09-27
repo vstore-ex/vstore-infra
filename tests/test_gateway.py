@@ -123,5 +123,40 @@ class TestEdgeGatewayConfig(unittest.TestCase):
 
         self.assertIn("NGINX_ENVSUBST_FILTER", compose_content, "proxy service must specify NGINX_ENVSUBST_FILTER")
 
+    def test_certbot_service_defined_in_compose(self):
+        """
+        Slice 2 / Issue #20: certbot service must be configured in docker-compose.yml
+        sharing certbot_certs and certbot_webroot volumes with proxy.
+        """
+        with open(self.compose_file, "r", encoding="utf-8") as f:
+            compose_content = f.read()
+
+        self.assertIn("certbot:", compose_content, "certbot service must be defined in docker-compose.yml")
+        self.assertIn("certbot/certbot", compose_content, "certbot service must use official certbot image")
+        self.assertIn("certbot_certs:/etc/letsencrypt", compose_content, "certbot must mount certbot_certs volume")
+        self.assertIn("certbot_webroot:/var/www/certbot", compose_content, "certbot must mount certbot_webroot volume")
+
+    def test_init_letsencrypt_bootstrap_script(self):
+        """
+        Slice 2 / Issue #20: scripts/init-letsencrypt.sh must exist, be executable,
+        support staging mode, validate against both FRONTEND_DOMAIN and ADMIN_DOMAIN,
+        and trigger an Nginx configuration reload.
+        """
+        script_path = os.path.join(self.infra_dir, "scripts", "init-letsencrypt.sh")
+        self.assertTrue(os.path.exists(script_path), f"Bootstrap script {script_path} must exist")
+        self.assertTrue(os.access(script_path, os.X_OK), f"Bootstrap script {script_path} must be executable")
+
+        with open(script_path, "r", encoding="utf-8") as f:
+            script_content = f.read()
+
+        self.assertIn("FRONTEND_DOMAIN", script_content, "Script must read FRONTEND_DOMAIN")
+        self.assertIn("ADMIN_DOMAIN", script_content, "Script must read ADMIN_DOMAIN")
+        self.assertIn("CERTBOT_EMAIL", script_content, "Script must read CERTBOT_EMAIL")
+        self.assertIn("CERTBOT_STAGING", script_content, "Script must support CERTBOT_STAGING")
+        self.assertIn("certonly", script_content, "Script must invoke certbot certonly")
+        self.assertIn("--webroot", script_content, "Script must use webroot plugin")
+        self.assertIn("nginx -s reload", script_content, "Script must signal Nginx reload")
+
 if __name__ == "__main__":
     unittest.main()
+

@@ -211,6 +211,23 @@ services:
       timeout: 5s
       retries: 3
 
+  certbot:
+    <<: *default-hardening
+    image: certbot/certbot:v3.1.0
+    restart: unless-stopped
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "0.2"
+          memory: 128M
+    volumes:
+      - certbot_certs:/etc/letsencrypt
+      - certbot_webroot:/var/www/certbot
+    networks:
+      - app_net
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done'"
+
 networks:
   app_net:
     driver: bridge
