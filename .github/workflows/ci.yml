@@ -29,6 +29,10 @@ jobs:
       - name: Validate docker-compose configuration
         run: docker compose config --quiet
 
+      - name: Execute Edge Gateway & TLS automation tests
+        run: python3 -m unittest tests/test_gateway.py -v
+
+
   deploy:
     name: Apply Stack Config via SSH
     needs: [validate-compose]
