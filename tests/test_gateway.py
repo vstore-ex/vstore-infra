@@ -157,6 +157,37 @@ class TestEdgeGatewayConfig(unittest.TestCase):
         self.assertIn("--webroot", script_content, "Script must use webroot plugin")
         self.assertIn("nginx -s reload", script_content, "Script must signal Nginx reload")
 
+    def test_certbot_renewal_cadence_and_on_boot(self):
+        """
+        Slice 3 / Issue #21: Certbot container must execute renewal immediately on boot
+        prior to sleeping, and the loop interval must be 1 hour to support servers
+        active for only 1-2 hours per day.
+        """
+        with open(self.compose_file, "r", encoding="utf-8") as f:
+            compose_content = f.read()
+
+        # Extract certbot entrypoint line
+        self.assertIn("certbot renew", compose_content, "Entrypoint must invoke certbot renew")
+        self.assertIn("sleep 1h", compose_content, "Cadence interval must be 1 hour for intermittent uptime")
+        self.assertNotIn("sleep 12h", compose_content, "12h interval is unsuitable for 1-2h daily server uptime")
+
+    def test_nginx_periodic_reload_watchdog(self):
+        """
+        Slice 3 / Issue #21: A dedicated non-blocking watchdog script must exist in
+        config/nginx/entrypoint/ to periodically trigger `nginx -s reload` without
+        requiring Docker daemon socket exposure.
+        """
+        script_path = os.path.join(self.infra_dir, "config", "nginx", "entrypoint", "20-periodic-reload.sh")
+        self.assertTrue(os.path.exists(script_path), f"Watchdog script {script_path} must exist")
+        self.assertTrue(os.access(script_path, os.X_OK), f"Watchdog script {script_path} must be executable")
+
+        with open(script_path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        self.assertIn("nginx -s reload", content, "Watchdog script must issue nginx -s reload")
+        self.assertIn("&", content, "Watchdog must run in background subshell to prevent blocking entrypoint")
+
 if __name__ == "__main__":
     unittest.main()
+
 
