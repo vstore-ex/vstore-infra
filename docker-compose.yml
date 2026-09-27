@@ -143,8 +143,8 @@ services:
     depends_on:
       backend:
         condition: service_healthy
-    ports:
-      - "0.0.0.0:3000:8080"
+    expose:
+      - "8080"
     networks:
       - app_net
     healthcheck:
@@ -166,12 +166,47 @@ services:
     depends_on:
       backend:
         condition: service_healthy
-    ports:
-      - "0.0.0.0:3001:8080"
+    expose:
+      - "8080"
     networks:
       - app_net
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  proxy:
+    <<: *default-hardening
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+    environment:
+      FRONTEND_DOMAIN: ${FRONTEND_DOMAIN:-vstore.local}
+      ADMIN_DOMAIN: ${ADMIN_DOMAIN:-admin.vstore.local}
+      NGINX_ENVSUBST_FILTER: "FRONTEND_DOMAIN ADMIN_DOMAIN"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./config/nginx/templates:/etc/nginx/templates:ro
+      - ./config/nginx/entrypoint:/docker-entrypoint.d:ro
+      - certbot_certs:/etc/letsencrypt
+      - certbot_webroot:/var/www/certbot
+    networks:
+      - app_net
+    depends_on:
+      frontend:
+        condition: service_healthy
+      admin:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:80/healthz || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -184,3 +219,5 @@ volumes:
   postgres_data:
   redis_data:
   uploads_temp:
+  certbot_certs:
+  certbot_webroot:

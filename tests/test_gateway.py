@@ -1,0 +1,127 @@
+import os
+import subprocess
+import unittest
+
+class TestEdgeGatewayConfig(unittest.TestCase):
+    def setUp(self):
+        self.infra_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        self.compose_file = os.path.join(self.infra_dir, "docker-compose.yml")
+
+    def test_compose_config_has_proxy_service_and_no_public_app_ports(self):
+        """
+        Tracer bullet: The edge proxy service must be defined in docker-compose.yml,
+        listening on ports 80 and 443, and application services (frontend, admin)
+        must not expose ports 3000/3001 to the host.
+        """
+        with open(self.compose_file, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        # Edge proxy service must be defined
+        self.assertIn("proxy:", content, "Edge proxy service 'proxy:' must be defined in docker-compose.yml")
+        self.assertIn('"80:80"', content, "Port 80 must be mapped for the proxy")
+        self.assertIn('"443:443"', content, "Port 443 must be mapped for the proxy")
+
+        # Frontend and admin must NOT expose public 3000:8080 or 3001:8080
+        self.assertNotIn("3000:8080", content, "Port 3000 must not be bound to host")
+        self.assertNotIn("3001:8080", content, "Port 3001 must not be bound to host")
+
+    def test_nginx_http_redirect_and_acme_challenge_template(self):
+        """
+        Behavior 2: The edge proxy must have an Nginx configuration template
+        that listens on port 80, serves /.well-known/acme-challenge/ directly from /var/www/certbot,
+        exposes /healthz, and returns a 301 redirect to https://$host$request_uri for all other traffic.
+        """
+        template_file = os.path.join(self.infra_dir, "config", "nginx", "templates", "default.conf.template")
+        self.assertTrue(os.path.exists(template_file), f"Template file {template_file} must exist")
+
+        with open(template_file, "r", encoding="utf-8") as f:
+            conf = f.read()
+
+        self.assertIn("listen 80", conf, "Nginx must listen on port 80")
+        self.assertIn("/.well-known/acme-challenge/", conf, "Nginx must have a location block for ACME challenge")
+        self.assertIn("/var/www/certbot", conf, "ACME challenge root must point to /var/www/certbot")
+        self.assertIn("return 301 https://$host$request_uri;", conf, "Nginx must return 301 redirect to HTTPS on port 80")
+        self.assertIn("/healthz", conf, "Nginx must have /healthz endpoint on port 80 for container healthcheck")
+
+    def test_nginx_https_virtual_hosts_and_proxy_pass(self):
+        """
+        Behavior 3: The edge proxy must configure SSL virtual hosts on port 443 for both
+        ${FRONTEND_DOMAIN} and ${ADMIN_DOMAIN}.
+        - Frontend host must proxy_pass to http://frontend:8080
+        - Admin host must proxy_pass to http://admin:8080
+        - Must include proxy headers for host, real IP, and X-Forwarded-Proto: https
+        - Must load SSL certificates from /etc/letsencrypt/live/...
+        """
+        template_file = os.path.join(self.infra_dir, "config", "nginx", "templates", "default.conf.template")
+        with open(template_file, "r", encoding="utf-8") as f:
+            conf = f.read()
+
+        self.assertIn("listen 443 ssl", conf, "Must have HTTPS listener on port 443")
+        self.assertIn("${FRONTEND_DOMAIN}", conf, "Must configure storefront virtual host with ${FRONTEND_DOMAIN}")
+        self.assertIn("${ADMIN_DOMAIN}", conf, "Must configure admin virtual host with ${ADMIN_DOMAIN}")
+        self.assertIn("http://frontend:8080", conf, "Storefront must proxy to http://frontend:8080")
+        self.assertIn("http://admin:8080", conf, "Admin dashboard must proxy to http://admin:8080")
+        self.assertIn("proxy_set_header X-Forwarded-Proto https;", conf, "Must set X-Forwarded-Proto to https")
+        self.assertIn("ssl_certificate /etc/letsencrypt/live/", conf, "Must configure ssl_certificate from letsencrypt path")
+        self.assertIn("ssl_certificate_key /etc/letsencrypt/live/", conf, "Must configure ssl_certificate_key from letsencrypt path")
+
+    def test_env_example_defines_domains_and_compose_validates(self):
+        """
+        Behavior 4: .env.example must define FRONTEND_DOMAIN, ADMIN_DOMAIN, CERTBOT_EMAIL,
+        and CERTBOT_STAGING so that CI and new developers have valid templates.
+        Also verifies that `docker compose config --quiet` executes successfully.
+        """
+        env_example_file = os.path.join(self.infra_dir, ".env.example")
+        with open(env_example_file, "r", encoding="utf-8") as f:
+            env_content = f.read()
+
+        self.assertIn("FRONTEND_DOMAIN=", env_content, ".env.example must define FRONTEND_DOMAIN")
+        self.assertIn("ADMIN_DOMAIN=", env_content, ".env.example must define ADMIN_DOMAIN")
+        self.assertIn("CERTBOT_EMAIL=", env_content, ".env.example must define CERTBOT_EMAIL")
+        self.assertIn("CERTBOT_STAGING=", env_content, ".env.example must define CERTBOT_STAGING")
+
+        # Validate docker compose syntax
+        result = subprocess.run(
+            ["docker", "compose", "config", "--quiet"],
+            cwd=self.infra_dir,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        self.assertEqual(result.returncode, 0, f"docker compose config failed: {result.stderr}")
+
+    def test_dummy_certificate_fallback_entrypoint(self):
+        """
+        Behavior 5: To prevent Nginx from crashing on fresh deployments when certificates
+        do not yet exist, a docker-entrypoint script must exist to generate temporary self-signed
+        dummy certificates into /etc/letsencrypt/live/${FRONTEND_DOMAIN}, and it must be mounted
+        into /docker-entrypoint.d/ in the proxy container.
+        """
+        with open(self.compose_file, "r", encoding="utf-8") as f:
+            compose_content = f.read()
+
+        self.assertIn("/docker-entrypoint.d", compose_content, "Proxy service must mount entrypoint script into /docker-entrypoint.d/")
+
+        script_path = os.path.join(self.infra_dir, "config", "nginx", "entrypoint", "10-init-dummy-certs.sh")
+        self.assertTrue(os.path.exists(script_path), f"Entrypoint script {script_path} must exist")
+
+        with open(script_path, "r", encoding="utf-8") as f:
+            script_content = f.read()
+
+        self.assertIn("openssl", script_content, "Script must use openssl to create dummy certificate")
+        self.assertIn("fullchain.pem", script_content, "Script must target fullchain.pem")
+        self.assertIn("privkey.pem", script_content, "Script must target privkey.pem")
+
+    def test_proxy_service_has_envsubst_filter_to_preserve_nginx_variables(self):
+        """
+        Behavior 6: To ensure Nginx internal variables ($host, $request_uri, $remote_addr)
+        are not erased by envsubst at container boot, NGINX_ENVSUBST_FILTER must be set
+        in the proxy service environment.
+        """
+        with open(self.compose_file, "r", encoding="utf-8") as f:
+            compose_content = f.read()
+
+        self.assertIn("NGINX_ENVSUBST_FILTER", compose_content, "proxy service must specify NGINX_ENVSUBST_FILTER")
+
+if __name__ == "__main__":
+    unittest.main()
