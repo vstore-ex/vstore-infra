@@ -187,7 +187,27 @@ class TestEdgeGatewayConfig(unittest.TestCase):
         self.assertIn("nginx -s reload", content, "Watchdog script must issue nginx -s reload")
         self.assertIn("&", content, "Watchdog must run in background subshell to prevent blocking entrypoint")
 
+    def test_ci_workflow_and_documentation(self):
+        """
+        Slice 4 / Issue #22: CI workflow (.github/workflows/ci.yml) must execute gateway tests,
+        and README.md must document the Edge Gateway architecture and bootstrap procedure.
+        """
+        ci_file = os.path.join(self.infra_dir, ".github", "workflows", "ci.yml")
+        with open(ci_file, "r", encoding="utf-8") as f:
+            ci_content = f.read()
+
+        self.assertIn("test_gateway.py", ci_content, "CI workflow must run test_gateway.py")
+
+        readme_file = os.path.join(self.infra_dir, "README.md")
+        with open(readme_file, "r", encoding="utf-8") as f:
+            readme_content = f.read()
+
+        self.assertIn("proxy", readme_content, "README must document proxy service")
+        self.assertIn("certbot", readme_content, "README must document certbot service")
+        self.assertIn("init-letsencrypt.sh", readme_content, "README must document bootstrap script")
+
 if __name__ == "__main__":
     unittest.main()
+
 
 
