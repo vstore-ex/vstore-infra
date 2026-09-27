@@ -6,26 +6,18 @@ Docker Compose orchestration and CI/CD for the **VStore** platform.
 
 ## 1. Architecture
 
-All services run in an isolated bridge network (`app_net`). External traffic enters exclusively via the **Edge Reverse Proxy** (`proxy`) on standard HTTP (`80`) and HTTPS (`443`) ports. Application services (`frontend`, `admin`) and data stores (`postgres`, `redis`, `backend`) are isolated from public host interfaces.
+All services run in an isolated bridge network (`app_net`). Reverse proxy (nginx) ships **inside** the `frontend` and `admin` images — this repo contains no nginx configs. PostgreSQL, Redis, and the backend bind strictly to `127.0.0.1`.
 
 ```
                         Public / Host Traffic
-                         (Ports 80 and 443)
-                                  │
-                                  ▼
-                 ┌───────────────────────────────────┐
-                 │       Edge Gateway (proxy)        │ (Nginx 1.27, SSL termination)
-                 └───────────────┬───┬───────────────┘
-                                 │   │
-        Host: ${FRONTEND_DOMAIN} │   │ Host: ${ADMIN_DOMAIN}
-                                 │   │
-                 ┌───────────────┘   └───────────────┐
-                 ▼                                   ▼
-          ┌─────────────┐                     ┌─────────────┐
-          │  frontend   │ (:8080 internal)    │    admin    │ (:8080 internal)
-          └──────┬──────┘                     └──────┬──────┘
-                 │                                   │
-                 └───────────────► /api/ ◄───────────┘ (Internal DNS: backend:8000)
+                         │                 │
+           Storefront    │                 │  Admin Dashboard
+           (Port 3000)   ▼                 ▼  (Port 3001)
+                   ┌───────────┐     ┌───────────┐
+                   │ frontend  │     │   admin   │ (nginx in-image, :8080)
+                   └─────┬─────┘     └─────┬─────┘
+                         │                 │
+                         └───► /api/ ◄─────┘ (Internal DNS: backend:8000)
                                    │
                                    ▼
                          ┌───────────────────┐
@@ -51,26 +43,21 @@ All services run in an isolated bridge network (`app_net`). External traffic ent
 
 | Service | Image | Host Binding | Health Check | Limits |
 | :--- | :--- | :--- | :--- | :--- |
-| `proxy` | `nginx:1.27-alpine` | `0.0.0.0:80`, `0.0.0.0:443` | `GET /healthz` | 0.5 CPU, 256M |
-| `certbot` | `certbot/certbot:v3.1.0` | — | on-boot renewal loop (1h interval) | 0.2 CPU, 128M |
-| `frontend` | `ghcr.io/vstore-ex/vstore-front` | internal (`expose: 8080`) | `GET /healthz` | 0.5 CPU, 256M |
-| `admin` | `ghcr.io/vstore-ex/vstore-admin` | internal (`expose: 8080`) | `GET /healthz` | 0.5 CPU, 256M |
+| `frontend` | `ghcr.io/vstore-ex/vstore-front` | `0.0.0.0:3000` | `GET /healthz` | 0.5 CPU, 256M |
+| `admin` | `ghcr.io/vstore-ex/vstore-admin` | `0.0.0.0:3001` | `GET /healthz` | 0.5 CPU, 256M |
 | `backend` | `ghcr.io/vstore-ex/vstore` | `127.0.0.1:8080` | `GET /health` | 1.5 CPU, 1024M |
-| `worker` | `ghcr.io/vstore-ex/vstore` | — | disabled (celery worker) | 1.0 CPU, 1024M |
+| `worker` | `ghcr.io/vstore-ex/vstore` | — | disabled (celery serves no HTTP; the image-inherited HEALTHCHECK probes `:8000`) | 1.0 CPU, 1024M |
 | `postgres` | `postgres:17` | `127.0.0.1:5432` | `pg_isready` | 1.0 CPU, 1024M |
 | `redis` | `redis:7.2-alpine` | `127.0.0.1:6379` | `redis-cli ping` | 0.5 CPU, 256M |
 
 ## 3. Quick Start
 
 ```bash
-cp .env.example .env   # configure FRONTEND_DOMAIN, ADMIN_DOMAIN, CERTBOT_EMAIL, POSTGRES_PASSWORD, etc.
-mkdir -p storage/media && sudo chown -R 10001:10001 storage   # appuser writable storage
+cp .env.example .env   # fill in secrets; POSTGRES_PASSWORD / SECRET_KEY / etc. are fail-fast
+mkdir -p storage/media && sudo chown -R 10001:10001 storage   # bind mount must be writable by appuser (UID 10001); chmod alone is NOT enough
 docker compose pull
 docker compose up -d
-docker compose ps      # verify all services report healthy
-
-# Initial TLS Certificate Acquisition (first run on production host):
-./scripts/init-letsencrypt.sh
+docker compose ps      # wait until all services report healthy
 ```
 
 Generate secrets with `openssl rand -hex 32`.
