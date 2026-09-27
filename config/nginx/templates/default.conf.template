@@ -54,6 +54,9 @@ server {
     ssl_session_timeout 1d;
     ssl_session_cache shared:SSL:10m;
 
+    # HTTP Strict Transport Security — instructs browsers to always use HTTPS
+    add_header Strict-Transport-Security "max-age=15768000; includeSubDomains" always;
+
     # Match application maximum body payload limit
     client_max_body_size 150M;
 
@@ -78,12 +81,17 @@ server {
     listen [::]:443 ssl;
     server_name ${ADMIN_DOMAIN};
 
+    # Both domains share a single SAN certificate issued under ${FRONTEND_DOMAIN}
+    # by init-letsencrypt.sh — Certbot stores it at /etc/letsencrypt/live/<first -d arg>/
     ssl_certificate /etc/letsencrypt/live/${FRONTEND_DOMAIN}/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/${FRONTEND_DOMAIN}/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_prefer_server_ciphers off;
     ssl_session_timeout 1d;
     ssl_session_cache shared:SSL:10m;
+
+    # HTTP Strict Transport Security — instructs browsers to always use HTTPS
+    add_header Strict-Transport-Security "max-age=15768000; includeSubDomains" always;
 
     # Match application maximum body payload limit
     client_max_body_size 150M;

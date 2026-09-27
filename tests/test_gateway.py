@@ -25,6 +25,9 @@ class TestEdgeGatewayConfig(unittest.TestCase):
         self.assertNotIn("3000:8080", content, "Port 3000 must not be bound to host")
         self.assertNotIn("3001:8080", content, "Port 3001 must not be bound to host")
 
+        # Proxy must re-add NET_BIND_SERVICE after cap_drop: ALL (required for ports 80/443)
+        self.assertIn("NET_BIND_SERVICE", content, "Proxy must have NET_BIND_SERVICE capability for privileged port binding")
+
     def test_nginx_http_redirect_and_acme_challenge_template(self):
         """
         Behavior 2: The edge proxy must have an Nginx configuration template
@@ -64,6 +67,7 @@ class TestEdgeGatewayConfig(unittest.TestCase):
         self.assertIn("proxy_set_header X-Forwarded-Proto https;", conf, "Must set X-Forwarded-Proto to https")
         self.assertIn("ssl_certificate /etc/letsencrypt/live/", conf, "Must configure ssl_certificate from letsencrypt path")
         self.assertIn("ssl_certificate_key /etc/letsencrypt/live/", conf, "Must configure ssl_certificate_key from letsencrypt path")
+        self.assertIn("Strict-Transport-Security", conf, "HTTPS server blocks must include HSTS header")
 
     def test_env_example_defines_domains_and_compose_validates(self):
         """

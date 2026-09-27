@@ -178,6 +178,13 @@ services:
 
   proxy:
     <<: *default-hardening
+    # Re-add minimal caps removed by *default-hardening (cap_drop: ALL):
+    # - NET_BIND_SERVICE: bind to privileged ports 80/443
+    # - SETUID/SETGID: nginx master drops to 'nginx' user for workers
+    cap_add:
+      - NET_BIND_SERVICE
+      - SETUID
+      - SETGID
     image: nginx:1.27-alpine
     restart: unless-stopped
     logging: *default-logging
