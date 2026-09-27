@@ -161,6 +161,14 @@ class TestEdgeGatewayConfig(unittest.TestCase):
         self.assertIn("--webroot", script_content, "Script must use webroot plugin")
         self.assertIn("nginx -s reload", script_content, "Script must signal Nginx reload")
 
+        # Entrypoint must be exec-form (single binary), not a multi-word shell string
+        self.assertIn("--entrypoint certbot certbot", script_content,
+                       "Script must use exec-form entrypoint (single binary) to avoid shell-form fragility")
+
+        # --force-renewal must NOT be unconditional (burns Let's Encrypt rate limits)
+        self.assertIn("CERTBOT_FORCE_RENEWAL", script_content,
+                       "Script must gate --force-renewal behind an explicit env var")
+
     def test_certbot_renewal_cadence_and_on_boot(self):
         """
         Slice 3 / Issue #21: Certbot container must execute renewal immediately on boot
