@@ -120,3 +120,7 @@ App repos call these via `uses: vstore-ex/vstore-infra/.github/workflows/<file>.
 The edge proxy builds from `config/nginx/Dockerfile`, which installs the OpenSSL CLI required for fallback certificates. Run `docker compose build proxy` before applying the stack. Individual entrypoint mounts preserve the official Nginx envsubst script; the renewal watchdog runs after template expansion.
 
 Run `bash tests/smoke-proxy.sh` to build and start the hardened proxy with an empty certificate directory. The test checks certificate generation, template expansion, Nginx syntax, and HTTP health. Infra CD captures container health and logs before attempting a bounded config rollback.
+
+### Azure DNS label with local admin
+
+For a public storefront hostname and a local admin hostname, set `ADMIN_CERT_NAME` to the existing local certificate directory (for example `vstore.local`) and `CERTBOT_INCLUDE_ADMIN_DOMAIN=0`. Issue the public certificate before switching `FRONTEND_DOMAIN`, so the fallback generator does not create an unmanaged directory at the intended Certbot certificate path. The admin continues to use its self-signed certificate.

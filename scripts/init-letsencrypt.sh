@@ -23,6 +23,7 @@ ADMIN_DOMAIN="${ADMIN_DOMAIN:-admin.vstore.local}"
 CERTBOT_EMAIL="${CERTBOT_EMAIL:-admin@vstore.local}"
 CERTBOT_STAGING="${CERTBOT_STAGING:-0}"
 CERTBOT_FORCE_RENEWAL="${CERTBOT_FORCE_RENEWAL:-0}"
+CERTBOT_INCLUDE_ADMIN_DOMAIN="${CERTBOT_INCLUDE_ADMIN_DOMAIN:-1}"
 
 echo "================================================================="
 echo "VStore Let's Encrypt TLS Bootstrap"
@@ -52,7 +53,7 @@ CERTBOT_ARGS=(
 
 # Append domain arguments
 CERTBOT_ARGS+=(-d "${FRONTEND_DOMAIN}")
-if [ "${FRONTEND_DOMAIN}" != "${ADMIN_DOMAIN}" ]; then
+if [ "${CERTBOT_INCLUDE_ADMIN_DOMAIN}" != "0" ] && [ "${FRONTEND_DOMAIN}" != "${ADMIN_DOMAIN}" ]; then
   CERTBOT_ARGS+=(-d "${ADMIN_DOMAIN}")
 fi
 

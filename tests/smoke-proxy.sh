@@ -14,8 +14,8 @@ docker run -d --name "$name" --network none \
   --cap-drop ALL --cap-add NET_BIND_SERVICE --cap-add CHOWN --cap-add SETUID --cap-add SETGID \
   --security-opt no-new-privileges:true \
   --add-host backend:127.0.0.1 --add-host frontend:127.0.0.1 --add-host admin:127.0.0.1 \
-  -e FRONTEND_DOMAIN=vstore.local -e ADMIN_DOMAIN=admin.vstore.local \
-  -e 'NGINX_ENVSUBST_FILTER=FRONTEND_DOMAIN|ADMIN_DOMAIN' \
+  -e FRONTEND_DOMAIN=vstore.local -e ADMIN_DOMAIN=admin.vstore.local -e ADMIN_CERT_NAME=vstore.local \
+  -e 'NGINX_ENVSUBST_FILTER=FRONTEND_DOMAIN|ADMIN_DOMAIN|ADMIN_CERT_NAME' \
   --tmpfs /etc/letsencrypt --tmpfs /var/www/certbot \
   -v "$PWD/config/nginx/templates:/etc/nginx/templates:ro" \
   -v "$PWD/config/nginx/entrypoint/10-init-dummy-certs.sh:/docker-entrypoint.d/10-init-dummy-certs.sh:ro" \

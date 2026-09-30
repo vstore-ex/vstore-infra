@@ -200,7 +200,8 @@ services:
     environment:
       FRONTEND_DOMAIN: ${FRONTEND_DOMAIN:-vstore.local}
       ADMIN_DOMAIN: ${ADMIN_DOMAIN:-admin.vstore.local}
-      NGINX_ENVSUBST_FILTER: "FRONTEND_DOMAIN|ADMIN_DOMAIN"
+      ADMIN_CERT_NAME: ${ADMIN_CERT_NAME:-${FRONTEND_DOMAIN:-vstore.local}}
+      NGINX_ENVSUBST_FILTER: "FRONTEND_DOMAIN|ADMIN_DOMAIN|ADMIN_CERT_NAME"
     ports:
       - "80:80"
       - "443:443"
