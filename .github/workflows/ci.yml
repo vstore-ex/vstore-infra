@@ -29,6 +29,9 @@ jobs:
       - name: Validate docker-compose configuration
         run: docker compose config --quiet
 
+      - name: Verify proxy bootstrap without certificates
+        run: bash tests/smoke-proxy.sh
+
       - name: Execute Edge Gateway & TLS automation tests
         run: python3 -m unittest tests/test_gateway.py -v
 
@@ -89,11 +92,25 @@ jobs:
             # App images are pinned by their own repo CI (digest refs via shell
             # env, which overrides the .env defaults). This deploy applies
             # compose config changes only.
-            if ! docker compose up -d --remove-orphans --wait; then
+            if ! (docker compose build proxy && docker compose up -d --remove-orphans --wait --wait-timeout 150); then
+              docker compose ps -a || true
+              docker compose logs --no-color --timestamps --tail=150 || true
+              for service in backend frontend admin proxy certbot; do
+                container_id=$(docker compose ps -aq "$service" 2>/dev/null || true)
+                if [ -n "$container_id" ]; then
+                  docker inspect --format '{{.Name}} Image={{.Image}} State={{json .State}}' "$container_id" || true
+                fi
+              done
               echo "ERROR: Stack failed to converge. Rolling back config to $PREV_GIT_COMMIT."
               if [ -n "$PREV_GIT_COMMIT" ]; then
                 git reset --hard "$PREV_GIT_COMMIT"
-                docker compose up -d --remove-orphans --wait
+                if docker compose up -d --remove-orphans --wait --wait-timeout 150; then
+                  echo "==> Config rollback completed successfully."
+                else
+                  echo "ERROR: Config rollback failed."
+                  docker compose ps -a || true
+                  docker compose logs --no-color --timestamps --tail=150 || true
+                fi
               fi
               exit 1
             fi

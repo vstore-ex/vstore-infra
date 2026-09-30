@@ -180,12 +180,16 @@ services:
     <<: *default-hardening
     # Re-add minimal caps removed by *default-hardening (cap_drop: ALL):
     # - NET_BIND_SERVICE: bind to privileged ports 80/443
+    # - CHOWN: initialize nginx cache directory ownership
     # - SETUID/SETGID: nginx master drops to 'nginx' user for workers
     cap_add:
       - NET_BIND_SERVICE
+      - CHOWN
       - SETUID
       - SETGID
-    image: nginx:1.27-alpine
+    image: vstore-proxy:local
+    build:
+      context: ./config/nginx
     restart: unless-stopped
     logging: *default-logging
     deploy:
@@ -196,13 +200,14 @@ services:
     environment:
       FRONTEND_DOMAIN: ${FRONTEND_DOMAIN:-vstore.local}
       ADMIN_DOMAIN: ${ADMIN_DOMAIN:-admin.vstore.local}
-      NGINX_ENVSUBST_FILTER: "FRONTEND_DOMAIN ADMIN_DOMAIN"
+      NGINX_ENVSUBST_FILTER: "FRONTEND_DOMAIN|ADMIN_DOMAIN"
     ports:
       - "80:80"
       - "443:443"
     volumes:
       - ./config/nginx/templates:/etc/nginx/templates:ro
-      - ./config/nginx/entrypoint:/docker-entrypoint.d:ro
+      - ./config/nginx/entrypoint/10-init-dummy-certs.sh:/docker-entrypoint.d/10-init-dummy-certs.sh:ro
+      - ./config/nginx/entrypoint/20-periodic-reload.sh:/docker-entrypoint.d/30-periodic-reload.sh:ro
       - certbot_certs:/etc/letsencrypt
       - certbot_webroot:/var/www/certbot
     networks:

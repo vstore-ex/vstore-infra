@@ -114,3 +114,9 @@ App repos call these via `uses: vstore-ex/vstore-infra/.github/workflows/<file>.
 * Env file: `~/vstore/.env` — must define all fail-fast variables (see §5) plus `AZURE_STORAGE_CONNECTION_STRING` if Blob storage is used. `DATABASE_URL` must reference the compose service name (`@postgres:5432/...`), never `127.0.0.1`/`localhost`, and a database name that actually exists on the `postgres_data` volume (`POSTGRES_DB` only applies at first-volume init).
 * GHCR: the host must be authenticated (`docker login ghcr.io` with a PAT holding `read:packages`) to pull private images.
 * Docker Compose **v2 plugin** (`docker compose ...`) is required on the host; the standalone legacy `docker-compose` is not used.
+
+### Proxy bootstrap verification
+
+The edge proxy builds from `config/nginx/Dockerfile`, which installs the OpenSSL CLI required for fallback certificates. Run `docker compose build proxy` before applying the stack. Individual entrypoint mounts preserve the official Nginx envsubst script; the renewal watchdog runs after template expansion.
+
+Run `bash tests/smoke-proxy.sh` to build and start the hardened proxy with an empty certificate directory. The test checks certificate generation, template expansion, Nginx syntax, and HTTP health. Infra CD captures container health and logs before attempting a bounded config rollback.

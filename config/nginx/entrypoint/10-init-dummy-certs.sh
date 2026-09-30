@@ -13,8 +13,7 @@ if [ ! -f "${FULLCHAIN}" ] || [ ! -f "${PRIVKEY}" ]; then
     openssl req -x509 -nodes -newkey rsa:2048 -days 365 \
         -keyout "${PRIVKEY}" \
         -out "${FULLCHAIN}" \
-        -subj "/CN=${FRONTEND_DOMAIN:-vstore.local}" \
-        2>/dev/null
+        -subj "/CN=${FRONTEND_DOMAIN:-vstore.local}"
     echo "==> [nginx-init] Dummy certificate generated successfully."
 else
     echo "==> [nginx-init] Certificate already exists at ${FULLCHAIN}."
