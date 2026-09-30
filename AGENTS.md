@@ -11,7 +11,7 @@ Conventions, constraints, and verification procedures for agents and DevOps engi
 - **Shared CI/CD**: reusable workflows (`build-and-push.yml`, `deploy-service.yml`) that every app repo calls for image builds and SSH deploys.
 - **Infra CI** (`ci.yml`): compose validation + config sync to the production host.
 
-Reverse proxy (nginx) lives **inside the `frontend`/`admin` images** — this repo has no nginx configs. Media routing, CSP, and proxy headers belong to those repos.
+Reverse proxy (nginx) lives **inside the `frontend`/`admin` images** — edge TLS proxy configs live in `config/nginx`; application proxy configs remain in the app repos. Media routing, CSP, and proxy headers belong to those repos.
 
 ## 2. Service Topology
 
@@ -61,7 +61,7 @@ docker compose logs -f backend  # logs
 docker compose down             # stop (add -v to wipe data — DESTRUCTIVE)
 ```
 
-This repo has no build contexts — `docker compose up --build` is invalid here. Images come from GHCR.
+Only the edge proxy builds locally from `config/nginx/Dockerfile` to provide the OpenSSL CLI. Application images come from GHCR. Build the proxy with `docker compose build proxy` before applying TLS configuration.
 
 ## 5. Deployment Model
 
