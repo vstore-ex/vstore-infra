@@ -61,6 +61,7 @@ class TestEdgeGatewayConfig(unittest.TestCase):
 
         self.assertIn("listen 443 ssl", conf, "Must have HTTPS listener on port 443")
         self.assertIn("${FRONTEND_DOMAIN}", conf, "Must configure storefront virtual host with ${FRONTEND_DOMAIN}")
+        self.assertIn("${ADMIN_CERT_NAME}", conf, "Admin certificate can be selected independently")
         self.assertIn("${ADMIN_DOMAIN}", conf, "Must configure admin virtual host with ${ADMIN_DOMAIN}")
         self.assertIn("http://frontend:8080", conf, "Storefront must proxy to http://frontend:8080")
         self.assertIn("http://admin:8080", conf, "Admin dashboard must proxy to http://admin:8080")

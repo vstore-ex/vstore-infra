@@ -81,10 +81,9 @@ server {
     listen [::]:443 ssl;
     server_name ${ADMIN_DOMAIN};
 
-    # Both domains share a single SAN certificate issued under ${FRONTEND_DOMAIN}
-    # by init-letsencrypt.sh — Certbot stores it at /etc/letsencrypt/live/<first -d arg>/
-    ssl_certificate /etc/letsencrypt/live/${FRONTEND_DOMAIN}/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/${FRONTEND_DOMAIN}/privkey.pem;
+    # Defaults to the storefront SAN certificate; may select a separate local certificate.
+    ssl_certificate /etc/letsencrypt/live/${ADMIN_CERT_NAME}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${ADMIN_CERT_NAME}/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_prefer_server_ciphers off;
     ssl_session_timeout 1d;
