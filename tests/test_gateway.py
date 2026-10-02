@@ -1,3 +1,4 @@
+import json
 import os
 import subprocess
 import unittest
@@ -11,7 +12,7 @@ class TestEdgeGatewayConfig(unittest.TestCase):
         """
         Tracer bullet: The edge proxy service must be defined in docker-compose.yml,
         listening on ports 80 and 443, and application services (frontend, admin)
-        must not expose ports 3000/3001 to the host.
+        must publish deployment health ports only on the host loopback interface.
         """
         with open(self.compose_file, "r", encoding="utf-8") as f:
             content = f.read()
@@ -21,9 +22,22 @@ class TestEdgeGatewayConfig(unittest.TestCase):
         self.assertIn('"80:80"', content, "Port 80 must be mapped for the proxy")
         self.assertIn('"443:443"', content, "Port 443 must be mapped for the proxy")
 
-        # Frontend and admin must NOT expose public 3000:8080 or 3001:8080
-        self.assertNotIn("3000:8080", content, "Port 3000 must not be bound to host")
-        self.assertNotIn("3001:8080", content, "Port 3001 must not be bound to host")
+        # Inspect resolved bindings so an omitted host IP cannot expose app ports publicly.
+        result = subprocess.run(
+            ["docker", "compose", "--env-file", ".env.example", "config", "--format", "json"],
+            cwd=self.infra_dir,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        services = json.loads(result.stdout)["services"]
+        for service, port in (("frontend", "3000"), ("admin", "3001")):
+            with self.subTest(service=service):
+                bindings = services[service].get("ports", [])
+                self.assertEqual(len(bindings), 1, "Each app needs one loopback deployment health port")
+                self.assertEqual(bindings[0]["host_ip"], "127.0.0.1")
+                self.assertEqual(str(bindings[0]["published"]), port)
+                self.assertEqual(bindings[0]["target"], 8080)
 
         # Proxy must re-add NET_BIND_SERVICE after cap_drop: ALL (required for ports 80/443)
         self.assertIn("NET_BIND_SERVICE", content, "Proxy must have NET_BIND_SERVICE capability for privileged port binding")
@@ -221,6 +235,5 @@ class TestEdgeGatewayConfig(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
 
 
