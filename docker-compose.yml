@@ -147,8 +147,9 @@ services:
     depends_on:
       backend:
         condition: service_healthy
-    expose:
-      - "8080"
+    # Host-side CI health checks; public traffic still enters through the TLS proxy.
+    ports:
+      - "127.0.0.1:3000:8080"
     networks:
       - app_net
     healthcheck:
@@ -170,8 +171,8 @@ services:
     depends_on:
       backend:
         condition: service_healthy
-    expose:
-      - "8080"
+    ports:
+      - "127.0.0.1:3001:8080"
     networks:
       - app_net
     healthcheck:

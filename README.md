@@ -53,8 +53,8 @@ All services run in an isolated bridge network (`app_net`). External traffic ent
 | :--- | :--- | :--- | :--- | :--- |
 | `proxy` | `nginx:1.27-alpine` | `0.0.0.0:80`, `0.0.0.0:443` | `GET /healthz` | 0.5 CPU, 256M |
 | `certbot` | `certbot/certbot:v3.1.0` | — | on-boot renewal loop (1h interval) | 0.2 CPU, 128M |
-| `frontend` | `ghcr.io/vstore-ex/vstore-front` | internal (`expose: 8080`) | `GET /healthz` | 0.5 CPU, 256M |
-| `admin` | `ghcr.io/vstore-ex/vstore-admin` | internal (`expose: 8080`) | `GET /healthz` | 0.5 CPU, 256M |
+| `frontend` | `ghcr.io/vstore-ex/vstore-front` | `127.0.0.1:3000` (container `8080`) | `GET /healthz` | 0.5 CPU, 256M |
+| `admin` | `ghcr.io/vstore-ex/vstore-admin` | `127.0.0.1:3001` (container `8080`) | `GET /healthz` | 0.5 CPU, 256M |
 | `backend` | `ghcr.io/vstore-ex/vstore` | `127.0.0.1:8080` | `GET /health` | 1.5 CPU, 1024M |
 | `worker` | `ghcr.io/vstore-ex/vstore` | — | disabled (celery worker) | 1.0 CPU, 1024M |
 | `postgres` | `postgres:17` | `127.0.0.1:5432` | `pg_isready` | 1.0 CPU, 1024M |
@@ -81,7 +81,7 @@ Generate secrets with `openssl rand -hex 32`.
 
 ## 5. Hardening
 
-1. **Network**: only `frontend`/`admin` are publicly bound (`3000`/`3001`); everything else stays on `127.0.0.1` or `app_net`.
+1. **Network**: only the edge proxy is publicly bound (`80`/`443`). Frontend and admin publish `3000`/`3001` on `127.0.0.1` for CI deployment health checks; all other services stay on `127.0.0.1` or `app_net`.
 2. **Containers**: app services (`backend`, `worker`, `frontend`, `admin`) run with `cap_drop: [ALL]` and `no-new-privileges`.
 3. **Fail-fast env**: `POSTGRES_PASSWORD`, `DATABASE_URL`, `SECRET_KEY`, `ADMIN_*` have no defaults — a missing variable aborts `docker compose up` instead of silently deploying weak credentials.
 4. **Logs**: `json-file` rotation (`10m` × `3`) via the `x-logging` anchor.
