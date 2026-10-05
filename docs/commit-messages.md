@@ -33,5 +33,38 @@ same format for the PR title so the default squash commit is valid. Standard
 merge and revert messages are ignored when checking commit history; PR titles
 are always checked. Existing history on `main` is not checked retroactively.
 
-To enforce this check before merge, add `Commitlint` as a required status
+To enforce this check before merge, add `Commitlint / Commitlint` as a required status
 check in the GitHub branch protection rule or ruleset for `main`.
+
+## Reusing the CI workflow
+
+The implementation lives in `vstore-infra/.github/workflows/commitlint.yml`
+and exposes `workflow_call`. The infra repository calls it with a relative
+path from `commitlint-check.yml`; other repositories call it with a reviewed
+infra commit SHA:
+
+```yaml
+name: Commitlint
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+permissions:
+  contents: read
+jobs:
+  commitlint:
+    name: Commitlint
+    uses: vstore-ex/vstore-infra/.github/workflows/commitlint.yml@<infra-commit-sha>
+```
+
+Callers need `package.json`, `package-lock.json`, the `commitlint` npm script,
+`commitlint.config.mjs`, and `.github/commitlint-title.config.mjs`. The shared
+workflow installs dependencies and checks the caller's history and PR title.
+No inputs or secrets are required. Access to reusable workflows from private
+repositories must be enabled for this organization, as with the shared build
+and deploy workflows.
+
+When updating the shared implementation, update the pinned infra SHA in the
+caller workflows. A published SHA works before infra merges into main, so
+application PR checks do not depend on merge order. The required status check
+is now named `Commitlint / Commitlint`.

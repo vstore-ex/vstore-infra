@@ -1,16 +1,12 @@
 name: Commitlint
 
+# Runs in the caller repository: checkout, npm cache, config and PR metadata
+# all belong to the caller. No secrets or inputs are required.
 on:
-  pull_request:
-    branches: [main]
-    types: [opened, synchronize, reopened, edited, ready_for_review]
+  workflow_call:
 
 permissions:
   contents: read
-
-concurrency:
-  group: commitlint-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
 
 jobs:
   commitlint:
