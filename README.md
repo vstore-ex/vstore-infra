@@ -8,7 +8,7 @@ Docker Compose orchestration and CI/CD for the **VStore** platform.
 
 ## 1. Architecture
 
-All services run in an isolated bridge network (`app_net`). External traffic enters exclusively via the **Edge Reverse Proxy** (`proxy`) on standard HTTP (`80`) and HTTPS (`443`) ports. Application services (`frontend`, `admin`) and data stores (`postgres`, `redis`, `backend`) are isolated from public host interfaces.
+External traffic enters exclusively via the **Edge Reverse Proxy** (`proxy`) on standard HTTP (`80`) and HTTPS (`443`) ports. Edge and app proxies use `proxy_net`; backend also joins the existing data network `app_net`. Application services (`frontend`, `admin`) and data stores (`postgres`, `redis`, `backend`) are isolated from public host interfaces.
 
 ```
                         Public / Host Traffic
@@ -97,6 +97,11 @@ See [release adoption and recovery](docs/releases.md) before rolling out this ch
 The production host now requires Python 3 in addition to Bash, flock and Compose v2.
 
 ## 5. Hardening
+
+Client identity is resolved through explicit trusted proxy addresses. The edge
+replaces incoming XFF, Uvicorn trusts only the edge/frontend/admin addresses, and
+backend raw-XFF trust is disabled in Compose. See [trust chain and backend handoff](docs/client-identity.md)
+for subnet configuration, rollout and real-Redis regression tests.
 
 1. **Network**: only the edge proxy is publicly bound (`80`/`443`). Frontend and admin publish `3000`/`3001` on `127.0.0.1` for CI deployment health checks; all other services stay on `127.0.0.1` or `app_net`.
 2. **Containers**: app services (`backend`, `worker`, `frontend`, `admin`) run with `cap_drop: [ALL]` and `no-new-privileges`.

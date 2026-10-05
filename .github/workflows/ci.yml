@@ -38,6 +38,12 @@ jobs:
       - name: Verify isolated deployment and rollback across fresh sessions
         run: python3 tests/smoke_release_state.py
 
+      - name: Verify trusted client identity configuration
+        run: python3 -m unittest discover -s tests -p 'test_client_identity.py' -v
+
+      - name: Verify forwarding trust and rate limits with real Redis
+        run: python3 tests/smoke_client_identity.py
+
       - name: Execute Edge Gateway & TLS automation tests
         run: python3 -m unittest tests/test_gateway.py -v
 
