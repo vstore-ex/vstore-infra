@@ -2,6 +2,8 @@
 
 Docker Compose orchestration and CI/CD for the **VStore** platform.
 
+[Владельцы компонентов и порядок выбора reviewer](https://github.com/vstore-ex/Docs/blob/main/CONTRIBUTING.md).
+
 ---
 
 ## 1. Architecture

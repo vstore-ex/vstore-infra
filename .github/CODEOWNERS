@@ -3,5 +3,8 @@
 # ==============================================================================
 # All infrastructure, deployment orchestration, and Nginx configurations
 # are managed exclusively by DevOps.
+# Reference only on GitHub Free/private; request review manually.
+# Roles, confirmation status and the infrastructure reserve exception:
+# https://github.com/vstore-ex/Docs/blob/main/CONTRIBUTING.md
 
 * @dumpe2fs
