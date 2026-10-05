@@ -88,42 +88,33 @@ jobs:
             echo "==> Acquiring deployment lock..."
             flock -w 300 200 || { echo "ERROR: Timeout waiting for deployment lock!"; exit 1; }
 
-            PRIMARY_SERVICE="${SERVICES%% *}"
-            # Registry digest (name@sha256:...) — a valid compose image ref for
-            # rollback. {{.Image}} would give the local content ID, which the
-            # registry cannot resolve.
-            CONTAINER_ID=$(docker compose ps -q "$PRIMARY_SERVICE" 2>/dev/null || true)
-            if [ -n "$CONTAINER_ID" ]; then
-              # RepoDigests lives on the IMAGE, not on the container object:
-              # inspect the container's image ID, then the image itself.
-              IMG_ID=$(docker inspect --format='{{.Image}}' "$CONTAINER_ID" 2>/dev/null || true)
-              PREV_IMAGE=""
-              if [ -n "$IMG_ID" ]; then
-                PREV_IMAGE=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMG_ID" 2>/dev/null || true)
-              fi
-              if [ -z "$PREV_IMAGE" ]; then
-                echo "ERROR: Running container $PRIMARY_SERVICE uses an image with no registry digest (RepoDigests empty — locally built image?)."
-                echo "ERROR: Refusing deploy: no valid rollback target. Fix: docker compose pull && docker compose up -d --force-recreate $SERVICES"
-                exit 1
-              fi
-            else
-              PREV_IMAGE=""
-              echo "==> No running $PRIMARY_SERVICE found (fresh deploy); no rollback target needed."
+            source scripts/release-state.sh
+            release_load
+            case "$IMAGE_VAR:$SERVICES" in
+              'BACKEND_IMAGE:backend worker'|'FRONTEND_IMAGE:frontend'|'ADMIN_IMAGE:admin') ;;
+              *) echo "ERROR: Image variable and service group do not match."; exit 1 ;;
+            esac
+            if ! [[ "$IMAGE" =~ ^[a-z0-9][a-z0-9._:/-]*@sha256:[0-9a-f]{64}$ ]]; then
+              echo "ERROR: Deployment requires an immutable registry digest."
+              exit 1
             fi
+            # Two-step container/image inspection verifies the persisted rollback target.
+            release_state verify-images
+            PREV_IMAGE="${!IMAGE_VAR}"
             echo "==> Deploying $SERVICES: $IMAGE (previous: ${PREV_IMAGE:-none})"
 
             export "$IMAGE_VAR=$IMAGE"
             echo "==> Pulling image..."
-            docker compose pull $SERVICES
+            release_compose pull $SERVICES
 
             if [ "$RUN_MIGRATIONS" = "true" ]; then
-              PREV_MIGRATION=$(docker compose run --rm --no-deps backend alembic current 2>/dev/null || echo "unknown")
+              PREV_MIGRATION=$(release_compose run --rm --no-deps backend alembic current 2>/dev/null || echo "unknown")
               echo "==> Current Alembic revision: $PREV_MIGRATION"
 
               echo "==> Creating pre-deploy database snapshot..."
               mkdir -p "$DEPLOY_PATH/backups"
               BACKUP_FILE="$DEPLOY_PATH/backups/pre_deploy_$(date +%Y%m%d_%H%M%S).sql.gz"
-              if docker compose exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' | gzip > "${BACKUP_FILE}.tmp"; then
+              if release_compose exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' | gzip > "${BACKUP_FILE}.tmp"; then
                 BACKUP_SIZE=$(stat -c%s "${BACKUP_FILE}.tmp" 2>/dev/null || echo 0)
                 if [ "$BACKUP_SIZE" -gt 200 ]; then
                   mv "${BACKUP_FILE}.tmp" "$BACKUP_FILE"
@@ -141,12 +132,12 @@ jobs:
               fi
 
               echo "==> Applying database migrations..."
-              docker compose run --rm --no-deps backend alembic upgrade head
+              release_compose run --rm --no-deps backend alembic upgrade head
             fi
 
             echo "==> Restarting $SERVICES..."
             HEALTHY=true
-            if ! docker compose up -d --no-deps --wait $SERVICES; then
+            if ! release_compose up -d --no-deps --wait $SERVICES; then
               HEALTHY=false
             fi
 
@@ -154,7 +145,7 @@ jobs:
               echo "==> Verifying health: $HEALTH_URL"
               RETRIES=15
               for i in $(seq 1 $RETRIES); do
-                if curl -sf "$HEALTH_URL" > /dev/null 2>&1; then
+                if curl -sf --connect-timeout 3 --max-time 5 "$HEALTH_URL" > /dev/null 2>&1; then
                   break
                 fi
                 echo "Waiting for health check ($i/$RETRIES)..."
@@ -163,19 +154,25 @@ jobs:
               done
             fi
 
+            if [ "$HEALTHY" = "true" ] && ! release_state commit "$IMAGE_VAR" "$IMAGE"; then
+              HEALTHY=false
+            fi
+
             if [ "$HEALTHY" != "true" ]; then
               echo "ERROR: Health check failed for $SERVICES!"
-              docker compose logs --tail=50 $SERVICES
+              release_compose logs --tail=50 $SERVICES || true
               if [ -n "$PREV_IMAGE" ]; then
                 echo "==> Rolling back to previous image: $PREV_IMAGE"
                 export "$IMAGE_VAR=$PREV_IMAGE"
-                docker compose up -d --no-deps --wait $SERVICES
+                release_compose up -d --no-deps --wait $SERVICES
+                curl -fsS --retry 14 --retry-delay 3 --retry-all-errors --max-time 5 "$HEALTH_URL" > /dev/null
+                release_state commit "$IMAGE_VAR" "$PREV_IMAGE"
                 echo "==> Container image rolled back. SCOPE OF AUTOMATIC ROLLBACK IS THE IMAGE ONLY."
                 echo "==> Database schema is NOT downgraded automatically."
                 if [ "$RUN_MIGRATIONS" = "true" ] && [ "$PREV_MIGRATION" != "unknown" ]; then
                   echo "==> Options if the old image fails against the new schema:"
                   echo "    1. Manual schema restore from snapshot (DESTRUCTIVE, replaces current data):"
-                  echo "       gunzip -c ${BACKUP_FILE:-<snapshot>} | docker compose exec -T postgres psql -U \$POSTGRES_USER \$POSTGRES_DB"
+                  echo "       gunzip -c ${BACKUP_FILE:-<snapshot>} | bash scripts/compose.sh exec -T postgres psql -U \$POSTGRES_USER \$POSTGRES_DB"
                   echo "    2. alembic downgrade $PREV_MIGRATION (if the revision supports downgrade)"
                 fi
               else

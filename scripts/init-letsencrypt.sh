@@ -36,7 +36,7 @@ echo "================================================================="
 
 # Ensure edge proxy is up to serve /.well-known/acme-challenge/ on port 80
 echo "==> Ensuring Edge Reverse Proxy is running..."
-docker compose up -d proxy
+bash scripts/compose.sh up -d proxy
 
 # Build certbot command arguments as a proper bash array.
 # Each element stays a discrete argument through "${array[@]}" expansion,
@@ -73,11 +73,11 @@ fi
 
 echo "==> Requesting TLS certificate from Let's Encrypt via HTTP-01 webroot challenge..."
 # Use exec-form entrypoint (single binary) with arguments passed as CMD.
-# This avoids shell-form entrypoint fragility where docker compose run
+# This avoids shell-form entrypoint fragility where bash scripts/compose.sh run
 # --entrypoint may interpret a multi-word string as a single executable name.
-docker compose run --rm --entrypoint certbot certbot "${CERTBOT_ARGS[@]}"
+bash scripts/compose.sh run --rm --entrypoint certbot certbot "${CERTBOT_ARGS[@]}"
 
 echo "==> Reloading Nginx edge proxy configuration to apply new certificates..."
-docker compose exec proxy nginx -s reload
+bash scripts/compose.sh exec proxy nginx -s reload
 
 echo "==> Let's Encrypt TLS bootstrap completed successfully."

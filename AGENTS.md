@@ -40,7 +40,7 @@ Reverse proxy (nginx) lives **inside the `frontend`/`admin` images** — edge TL
 - App services carry `cap_drop: [ALL]` + `no-new-privileges` (see `x-hardening` anchor). New app services must include the anchor. PostgreSQL/Redis are exempt (privileged init).
 
 ### 🔄 5. Rollback Preflight & Image Pinning
-- App deploys pin exact digests by exporting `*_IMAGE` over `.env` (shell env wins in Compose interpolation). Never rely on `:latest` for a deploy or a rollback.
+- App deploys load verified digests from the host-local `docker-compose.override.yml` under the shared flock, then test candidates with `release_compose` (base file plus exported `*_IMAGE`). Never rely on `:latest` for a deploy or a rollback. Publish current and previous digests atomically only after health and image verification; see `docs/releases.md`.
 - The deploy preflight refuses to run if the current container's image has no `RepoDigests` (no valid rollback target). `RepoDigests` lives on the **image** — it must be read via two-step inspect (container `.Image` → image). Do not "simplify" this back to a single inspect.
 - Rollback restores the container image only. DB schema is never downgraded automatically; the deploy job prints the snapshot-restore and `alembic downgrade` paths.
 
@@ -55,10 +55,10 @@ Reverse proxy (nginx) lives **inside the `frontend`/`admin` images** — edge TL
 
 ```bash
 docker compose config --quiet   # validate before any PR
-docker compose up -d            # start (requires .env with secrets)
-docker compose ps               # healthcheck state
-docker compose logs -f backend  # logs
-docker compose down             # stop (add -v to wipe data — DESTRUCTIVE)
+bash scripts/compose.sh up -d --wait  # start with verified release state
+bash scripts/compose.sh ps            # healthcheck state
+bash scripts/compose.sh logs -f backend  # logs without holding the deploy lock
+bash scripts/compose.sh down          # stop (add -v to wipe data — DESTRUCTIVE)
 ```
 
 Only the edge proxy builds locally from `config/nginx/Dockerfile` to provide the OpenSSL CLI. Application images come from GHCR. Build the proxy with `docker compose build proxy` before applying TLS configuration.
@@ -68,4 +68,5 @@ Only the edge proxy builds locally from `config/nginx/Dockerfile` to provide the
 - App repos: `ci.yml` calls `vstore-infra/.github/workflows/build-and-push.yml@main` then `deploy-service.yml@main` (`secrets: inherit`). Digest-pinned, flock-serialized, health-gated, auto-rollback to previous digest.
 - This repo: `ci.yml` validates compose, then SSH-syncs config (`git reset --hard origin/main` + `docker compose up -d --wait`) in **`~/vstore`** on the host (override with `DEPLOY_PATH` secret) — that directory must remain a clean git clone of this repo.
 - Host preconditions: Docker Compose **v2 plugin**, `docker login ghcr.io` (PAT with `read:packages`), `~/vstore/.env` with all fail-fast variables (`DATABASE_URL` must use the service-name host `@postgres:5432/...` and an existing database name; `POSTGRES_DB` only applies at first-volume init), storage dir owned by UID `10001`.
+- Release tooling also requires Python 3. Adopt verified running images before rollout; infrastructure CD bootstraps a missing release state before convergence and fails if adoption cannot verify every application image. Use the manual wrapper to share `.deploy.lock`; plain Compose reads the persisted override but does not lock.
 - Requires org setting: *Actions → Allow reusable workflows from private repositories* — single dependency of the deduplicated CI; without it every cross-repo call fails at startup.

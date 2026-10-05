@@ -13,6 +13,9 @@ Thumbs.db
 *.log
 storage/
 
-
-# Commitlint development dependencies
+# Host-local verified release state and deployment lock
+docker-compose.override.yml
+.release-state-*
+.deploy.lock
 node_modules/
+__pycache__/
