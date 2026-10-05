@@ -44,6 +44,12 @@ jobs:
       - name: Verify forwarding trust and rate limits with real Redis
         run: python3 tests/smoke_client_identity.py
 
+      - name: Verify HTTPS API response and certificate policy
+        run: python3 -m unittest discover -s tests -p 'test_proxy_health.py' -v
+
+      - name: Verify upstream recreation and HTTPS API failure gates
+        run: python3 tests/smoke_upstream_recovery.py
+
       - name: Execute Edge Gateway & TLS automation tests
         run: python3 -m unittest tests/test_gateway.py -v
 
@@ -104,8 +110,13 @@ jobs:
             # Adopt healthy running digests once, then ignore stale .env image pins.
             source scripts/release-state.sh
             release_load
+            # Keep the new gate available even when the previous config commit
+            # predates this helper. The rollback still reads the restored Compose.
+            PROXY_HEALTH_HELPER=$(mktemp)
+            cp scripts/proxy-health.py "$PROXY_HEALTH_HELPER"
+            trap 'rm -f "$PROXY_HEALTH_HELPER"' EXIT
 
-            if ! (release_compose build proxy && release_compose up -d --remove-orphans --wait --wait-timeout 150 && release_state verify); then
+            if ! (release_compose build proxy && release_compose up -d --remove-orphans --wait --wait-timeout 150 && python3 "$PROXY_HEALTH_HELPER" recover && release_state verify); then
               docker compose ps -a || true
               docker compose logs --no-color --timestamps --tail=150 || true
               for service in backend frontend admin proxy certbot; do
@@ -117,7 +128,7 @@ jobs:
               echo "ERROR: Stack failed to converge. Rolling back config to $PREV_GIT_COMMIT."
               if [ -n "$PREV_GIT_COMMIT" ]; then
                 git reset --hard "$PREV_GIT_COMMIT"
-                if release_compose up -d --remove-orphans --wait --wait-timeout 150; then
+                if release_compose up -d --remove-orphans --wait --wait-timeout 150 && python3 "$PROXY_HEALTH_HELPER" recover; then
                   echo "==> Config rollback completed successfully."
                 else
                   echo "ERROR: Config rollback failed."

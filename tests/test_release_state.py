@@ -164,7 +164,7 @@ class ReleaseStateTests(unittest.TestCase):
     def test_intentional_rollback_persists_target_for_next_session(self):
         self.previous["FRONTEND_IMAGE"] = image("d")
         self.save()
-        with patch.object(release, "candidate_compose"), patch.object(release, "check_http"), patch.object(release, "verify"):
+        with patch.object(release, "candidate_compose"), patch.object(release, "check_http"), patch.object(release, "verify"), patch.object(release, "recover_proxies"):
             release.rollback("FRONTEND_IMAGE")
         current, previous = release.load()
         self.assertEqual(current["FRONTEND_IMAGE"], image("d"))
@@ -175,7 +175,16 @@ class ReleaseStateTests(unittest.TestCase):
     def test_failed_manual_rollback_restores_current_without_publishing(self):
         self.previous["FRONTEND_IMAGE"] = image("d")
         before = self.save()
-        with patch.object(release, "candidate_compose") as compose, patch.object(release, "check_http", side_effect=[ValueError("HTTP failed"), None]):
+        with patch.object(release, "candidate_compose") as compose, patch.object(release, "check_http", side_effect=[ValueError("HTTP failed"), None]), patch.object(release, "recover_proxies"):
+            with self.assertRaises(ValueError):
+                release.rollback("FRONTEND_IMAGE")
+        self.assertEqual(release.STATE.read_bytes(), before)
+        self.assertEqual(compose.call_args.args[0], self.current)
+
+    def test_failed_api_rollback_restores_current_without_publishing(self):
+        self.previous["FRONTEND_IMAGE"] = image("d")
+        before = self.save()
+        with patch.object(release, "candidate_compose") as compose, patch.object(release, "check_http"), patch.object(release, "recover_proxies", side_effect=[ValueError("API failed"), None]):
             with self.assertRaises(ValueError):
                 release.rollback("FRONTEND_IMAGE")
         self.assertEqual(release.STATE.read_bytes(), before)

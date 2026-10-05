@@ -54,6 +54,11 @@ with tempfile.TemporaryDirectory(prefix="vstore-release-smoke-") as directory:
     os.chdir(directory)
     try:
         shutil.copytree(ROOT / "scripts", "scripts")
+        # A01 fixture has only static HTTP servers; real TLS/API recovery is
+        # exercised separately by smoke_upstream_recovery.py.
+        Path("scripts/proxy-health.py").write_text(
+            "import os\nraise SystemExit(1 if os.getenv('FAIL_GATE_IMAGE') and "
+            "os.getenv('FRONTEND_IMAGE') == os.getenv('FAIL_GATE_IMAGE') else 0)\n")
         Path(".gitignore").write_text((ROOT / ".gitignore").read_text() + "\nremote.git/\nbin/\n")
         services = {
             service: {
@@ -149,6 +154,15 @@ with tempfile.TemporaryDirectory(prefix="vstore-release-smoke-") as directory:
         expected(old)
         print("PASS: failed HTTP gate never publishes the candidate")
 
+        environment['HEALTH_URL'] = health
+        environment['FAIL_GATE_IMAGE'] = new
+        result = subprocess.run(['bash', '-c', failure_script], env=environment)
+        assert result.returncode != 0
+        assert release.STATE.read_bytes() == before
+        expected(old)
+        del environment['FAIL_GATE_IMAGE']
+        print('PASS: failed proxy API gate restores the image without publishing the candidate')
+
         # A terminated deployment can leave candidate containers, but no candidate
         # success record. The next infra session restores the verified release.
         candidate = {**release.load()[0], "FRONTEND_IMAGE": new}
@@ -157,6 +171,29 @@ with tempfile.TemporaryDirectory(prefix="vstore-release-smoke-") as directory:
         run("bash", "-c", 'exec 200>.deploy.lock; source scripts/release-state.sh; release_load; release_compose up -d --wait --wait-timeout 60; release_state verify')
         expected(old)
         print("PASS: interrupted candidate converges to the last verified release")
+
+        # First rollout can need to restore a commit without proxy-health.py.
+        # The cached gate must survive git reset and check restored config.
+        run('git', 'rm', 'scripts/proxy-health.py')
+        run('git', 'commit', '-m', 'test: legacy config without the API gate')
+        legacy = run('git', 'rev-parse', 'HEAD')
+        gate = Path('scripts/proxy-health.py')
+        gate.write_text("import json,subprocess\n"
+                        "data=json.loads(subprocess.check_output(['docker','compose','config','--format','json']))\n"
+                        "raise SystemExit(1 if data['services']['frontend'].get('labels',{}).get('broken-api') else 0)\n")
+        services['frontend']['labels']['broken-api'] = 'true'
+        Path('docker-compose.yml').write_text(json.dumps({'services': services}))
+        run('git', 'add', 'scripts/proxy-health.py', 'docker-compose.yml')
+        run('git', 'commit', '-m', 'test: candidate config with broken API')
+        run('git', 'push', 'origin', 'main')
+        run('git', 'reset', '--hard', legacy)
+        result = subprocess.run(['bash', '-c', infra_script], env={**fresh, 'PATH': environment['PATH']})
+        assert result.returncode != 0
+        assert run('git', 'rev-parse', 'HEAD') == legacy
+        assert not gate.exists()
+        assert release.STATE.read_bytes() == before
+        expected(old)
+        print('PASS: infra API gate rolls back config even when the legacy commit lacks the helper')
     finally:
         # Only the unique disposable project is removed; never touch production.
         subprocess.run(["docker", "compose", "down", "--volumes", "--remove-orphans"], check=False)

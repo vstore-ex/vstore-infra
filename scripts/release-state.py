@@ -165,6 +165,10 @@ def check_http(key):
     raise ValueError("Release HTTP health check failed")
 
 
+def recover_proxies():
+    subprocess.run([sys.executable, "scripts/proxy-health.py", "recover"], check=True)
+
+
 def rollback(key):
     current, previous = load()
     if not previous[key]:
@@ -175,10 +179,12 @@ def rollback(key):
     try:
         candidate_compose(candidate, "up", "-d", "--no-deps", "--wait", "--wait-timeout", "150", *services)
         check_http(key)
+        recover_proxies()
         commit(key, candidate[key])
     except Exception:
         candidate_compose(current, "up", "-d", "--no-deps", "--wait", "--wait-timeout", "150", *services)
         check_http(key)
+        recover_proxies()
         raise
 
 
@@ -213,6 +219,7 @@ def main():
     commands.add_parser("env")
     commands.add_parser("verify")
     commands.add_parser("verify-images")
+    commands.add_parser("recover")
     publish = commands.add_parser("commit")
     publish.add_argument("key", choices=GROUPS)
     publish.add_argument("image")
@@ -237,11 +244,16 @@ def main():
             if args.command == "env":
                 for key, value in current.items():
                     print(f"{key}={value}")
+            elif args.command == "recover":
+                recover_proxies()
             elif args.command in ("verify", "verify-images"):
                 verify(current, healthy=args.command == "verify")
             else:
                 # The default override also protects plain docker compose in fresh sessions.
-                sys.exit(subprocess.call(["docker", "compose", *args.args]))
+                result = subprocess.call(["docker", "compose", *args.args])
+                if result == 0 and args.args and args.args[0] in ("up", "restart", "start"):
+                    recover_proxies()
+                sys.exit(result)
 
 
 if __name__ == "__main__":

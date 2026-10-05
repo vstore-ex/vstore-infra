@@ -154,6 +154,10 @@ jobs:
               done
             fi
 
+            if [ "$HEALTHY" = "true" ] && ! python3 scripts/proxy-health.py recover; then
+              HEALTHY=false
+            fi
+
             if [ "$HEALTHY" = "true" ] && ! release_state commit "$IMAGE_VAR" "$IMAGE"; then
               HEALTHY=false
             fi
@@ -166,6 +170,7 @@ jobs:
                 export "$IMAGE_VAR=$PREV_IMAGE"
                 release_compose up -d --no-deps --wait $SERVICES
                 curl -fsS --retry 14 --retry-delay 3 --retry-all-errors --max-time 5 "$HEALTH_URL" > /dev/null
+                python3 scripts/proxy-health.py recover
                 release_state commit "$IMAGE_VAR" "$PREV_IMAGE"
                 echo "==> Container image rolled back. SCOPE OF AUTOMATIC ROLLBACK IS THE IMAGE ONLY."
                 echo "==> Database schema is NOT downgraded automatically."

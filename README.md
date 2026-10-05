@@ -153,3 +153,5 @@ For a public storefront hostname and a local admin hostname, set `ADMIN_CERT_NAM
 Run `npm ci` with Node.js 22.12+ to enable the local Conventional Commits
 check. Pull requests also validate commits and the PR title in GitHub Actions.
 See [commit message guidelines](docs/commit-messages.md) for examples and setup.
+
+Deployment recovery reloads dependent Nginx proxies and checks both HTTPS API routes before publishing release state. Use `bash scripts/compose.sh recover` after out-of-band recreation. See [upstream recovery](https://github.com/vstore-ex/Docs/blob/main/infra/upstream-recovery.md).
