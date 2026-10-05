@@ -1,0 +1,20 @@
+{
+  "rate_limit.py": {
+    "repository": "vstore",
+    "path": "app/core/rate_limit.py",
+    "commit": "2e29e28e5a97e0fb40eacfb561dec7c45e6a7f6b",
+    "sha256": "cf38dd9dd03c3761907b2d2225257e38d48a274547a6c087cafda228aaca6bb6"
+  },
+  "frontend.conf": {
+    "repository": "vstore-front",
+    "path": "nginx/default.conf",
+    "commit": "2613c89b52f8dd895b01283fd310b62c8db441ff",
+    "sha256": "6c096b9ec899ebdeb243360003eae781ef4203104156207c1f8540fb9e6d487a"
+  },
+  "admin.conf": {
+    "repository": "vstore-admin",
+    "path": "nginx/default.conf",
+    "commit": "127625300d798f52f822948f2926cbe0c6dbdd10",
+    "sha256": "da6b46a174bc90aa5fc48148e15aa9e7018d64fd160c335d6c0894764905aa3d"
+  }
+}

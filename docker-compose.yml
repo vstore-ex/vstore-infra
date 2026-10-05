@@ -70,6 +70,17 @@ services:
 
   backend:
     <<: *default-hardening
+    # Override the image's wildcard proxy trust without modifying backend code.
+    command:
+      - uvicorn
+      - app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --proxy-headers
+      - --forwarded-allow-ips
+      - "${EDGE_PROXY_IP:-172.31.240.2},${FRONTEND_PROXY_IP:-172.31.240.3},${ADMIN_PROXY_IP:-172.31.240.4}"
     image: ${BACKEND_IMAGE:-ghcr.io/vstore-ex/vstore:latest}
     restart: unless-stopped
     init: true
@@ -84,14 +95,18 @@ services:
       ADMIN_EMAIL: ${ADMIN_EMAIL:?set in .env}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set in .env}
       PORT: 8080
-      TRUST_PROXY_HEADERS: ${TRUST_PROXY_HEADERS:-true}
+      # Client identity is resolved once by Uvicorn, not from the leftmost raw XFF.
+      TRUST_PROXY_HEADERS: "false"
     ports:
       - "127.0.0.1:8080:8000"
     volumes:
       - ./storage:/app/storage
       - uploads_temp:/tmp/uploads
     networks:
-      - app_net
+      app_net: {}
+      proxy_net:
+        # Reserve backend outside the trusted proxy slots before Docker allocates it.
+        ipv4_address: ${BACKEND_PROXY_IP:-172.31.240.5}
     depends_on:
       postgres:
         condition: service_healthy
@@ -151,7 +166,8 @@ services:
     ports:
       - "127.0.0.1:3000:8080"
     networks:
-      - app_net
+      proxy_net:
+        ipv4_address: ${FRONTEND_PROXY_IP:-172.31.240.3}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz || exit 1"]
       interval: 10s
@@ -174,7 +190,8 @@ services:
     ports:
       - "127.0.0.1:3001:8080"
     networks:
-      - app_net
+      proxy_net:
+        ipv4_address: ${ADMIN_PROXY_IP:-172.31.240.4}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz || exit 1"]
       interval: 10s
@@ -217,7 +234,8 @@ services:
       - certbot_certs:/etc/letsencrypt
       - certbot_webroot:/var/www/certbot
     networks:
-      - app_net
+      proxy_net:
+        ipv4_address: ${EDGE_PROXY_IP:-172.31.240.2}
     depends_on:
       frontend:
         condition: service_healthy
@@ -249,6 +267,12 @@ services:
 networks:
   app_net:
     driver: bridge
+  # Exact proxy addresses are trusted; other containers and the bridge gateway are not.
+  proxy_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${PROXY_NET_SUBNET:-172.31.240.0/28}
 
 volumes:
   postgres_data:
