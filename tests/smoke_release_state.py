@@ -62,7 +62,9 @@ with tempfile.TemporaryDirectory(prefix="vstore-release-smoke-") as directory:
             }
             for key, group in release.GROUPS.items() for service in group
         }
-        services["worker"]["healthcheck"] = {"disable": True}
+        # Nginx has no inherited healthcheck. Omit the fixture's check entirely:
+        # older Compose versions treat disable:true as a check during --wait.
+        services["worker"].pop("healthcheck")
         with socket.socket() as reservation:
             reservation.bind(("127.0.0.1", 0))
             port_number = reservation.getsockname()[1]
