@@ -101,7 +101,7 @@ class TestEdgeGatewayConfig(unittest.TestCase):
 
         # Validate docker compose syntax
         result = subprocess.run(
-            ["docker", "compose", "config", "--quiet"],
+            ["docker", "compose", "--env-file", ".env.example", "config", "--quiet"],
             cwd=self.infra_dir,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
