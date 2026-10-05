@@ -100,7 +100,7 @@ The production host now requires Python 3 in addition to Bash, flock and Compose
 
 Client identity is resolved through explicit trusted proxy addresses. The edge
 replaces incoming XFF, Uvicorn trusts only the edge/frontend/admin addresses, and
-backend raw-XFF trust is disabled in Compose. See [trust chain and backend handoff](docs/client-identity.md)
+backend raw-XFF trust is disabled in Compose. See [trust chain and backend handoff](https://github.com/vstore-ex/Docs/blob/main/infra/client-identity.md)
 for subnet configuration, rollout and real-Redis regression tests.
 
 1. **Network**: only the edge proxy is publicly bound (`80`/`443`). Frontend and admin publish `3000`/`3001` on `127.0.0.1` for CI deployment health checks; all other services stay on `127.0.0.1` or `app_net`.

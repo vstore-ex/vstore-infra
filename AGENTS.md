@@ -40,7 +40,7 @@ Reverse proxy (nginx) lives **inside the `frontend`/`admin` images** — edge TL
 - App services carry `cap_drop: [ALL]` + `no-new-privileges` (see `x-hardening` anchor). New app services must include the anchor. PostgreSQL/Redis are exempt (privileged init).
 
 ### 🔒 Trusted Client Identity
-- Edge overwrites XFF with its TCP peer. Backend raw-XFF trust must stay disabled; Uvicorn trusts only the exact edge/frontend/admin addresses on `proxy_net`. Never use wildcard/subnet proxy trust. Backend also joins `app_net`; the gateway and data services are not trusted hops. See `docs/client-identity.md` and its backend handoff.
+- Edge overwrites XFF with its TCP peer. Backend raw-XFF trust must stay disabled; Uvicorn trusts only the exact edge/frontend/admin addresses on `proxy_net`. Never use wildcard/subnet proxy trust. Backend also joins `app_net`; the gateway and data services are not trusted hops. See [trusted client identity](https://github.com/vstore-ex/Docs/blob/main/infra/client-identity.md) and its backend handoff.
 
 ### 🔄 5. Rollback Preflight & Image Pinning
 - App deploys load verified digests from the host-local `docker-compose.override.yml` under the shared flock, then test candidates with `release_compose` (base file plus exported `*_IMAGE`). Never rely on `:latest` for a deploy or a rollback. Publish current and previous digests atomically only after health and image verification; see `docs/releases.md`.
