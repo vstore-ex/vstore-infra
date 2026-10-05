@@ -13,3 +13,6 @@ Thumbs.db
 *.log
 storage/
 
+
+# Commitlint development dependencies
+node_modules/

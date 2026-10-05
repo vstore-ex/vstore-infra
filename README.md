@@ -124,3 +124,10 @@ Run `bash tests/smoke-proxy.sh` to build and start the hardened proxy with an em
 ### Azure DNS label with local admin
 
 For a public storefront hostname and a local admin hostname, set `ADMIN_CERT_NAME` to the existing local certificate directory (for example `vstore.local`) and `CERTBOT_INCLUDE_ADMIN_DOMAIN=0`. Issue the public certificate before switching `FRONTEND_DOMAIN`, so the fallback generator does not create an unmanaged directory at the intended Certbot certificate path. The admin continues to use its self-signed certificate.
+
+
+## Commit messages
+
+Run `npm ci` with Node.js 22.12+ to enable the local Conventional Commits
+check. Pull requests also validate commits and the PR title in GitHub Actions.
+See [commit message guidelines](docs/commit-messages.md) for examples and setup.
