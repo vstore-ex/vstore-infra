@@ -50,6 +50,12 @@ jobs:
       - name: Verify upstream recreation and HTTPS API failure gates
         run: python3 tests/smoke_upstream_recovery.py
 
+      - name: Verify database recovery guards
+        run: python3 -m unittest discover -s tests -p 'test_database_recovery.py' -v
+
+      - name: Verify PostgreSQL 17 snapshot and recovery
+        run: python3 tests/smoke_database_recovery.py
+
       - name: Execute Edge Gateway & TLS automation tests
         run: python3 -m unittest tests/test_gateway.py -v
 

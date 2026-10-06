@@ -108,25 +108,37 @@ jobs:
             release_compose pull $SERVICES
 
             if [ "$RUN_MIGRATIONS" = "true" ]; then
-              PREV_MIGRATION=$(release_compose run --rm --no-deps backend alembic current 2>/dev/null || echo "unknown")
+              PREV_MIGRATION=$(python3 scripts/database-recovery.py --lock-fd 200 revision)
               echo "==> Current Alembic revision: $PREV_MIGRATION"
 
               echo "==> Creating pre-deploy database snapshot..."
               mkdir -p "$DEPLOY_PATH/backups"
-              BACKUP_FILE="$DEPLOY_PATH/backups/pre_deploy_$(date +%Y%m%d_%H%M%S).sql.gz"
-              if release_compose exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' | gzip > "${BACKUP_FILE}.tmp"; then
-                BACKUP_SIZE=$(stat -c%s "${BACKUP_FILE}.tmp" 2>/dev/null || echo 0)
+              SNAPSHOT_TMP=$(mktemp "$DEPLOY_PATH/backups/pre_deploy_$(date +%Y%m%d_%H%M%S)_XXXXXX")
+              BACKUP_FILE="$SNAPSHOT_TMP.sql.gz"
+              if release_compose exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' | gzip > "$SNAPSHOT_TMP"; then
+                BACKUP_SIZE=$(python3 -c 'import os,sys; print(os.path.getsize(sys.argv[1]))' "$SNAPSHOT_TMP")
                 if [ "$BACKUP_SIZE" -gt 200 ]; then
-                  mv "${BACKUP_FILE}.tmp" "$BACKUP_FILE"
-                  ls -t "$DEPLOY_PATH/backups"/pre_deploy_*.sql.gz 2>/dev/null | tail -n +6 | xargs rm -f 2>/dev/null || true
-                  echo "==> Snapshot created: $BACKUP_FILE"
+                  mv "$SNAPSHOT_TMP" "$BACKUP_FILE"
+                  if ! python3 scripts/database-recovery.py --lock-fd 200 record "$BACKUP_FILE" --revision "$PREV_MIGRATION" --image "$PREV_IMAGE"; then
+                    mv "$BACKUP_FILE" "$BACKUP_FILE.unverified"
+                    if [ -f "$BACKUP_FILE.metadata.json" ]; then
+                      mv "$BACKUP_FILE.metadata.json" "$BACKUP_FILE.unverified.metadata.json"
+                    fi
+                    echo "ERROR: Snapshot metadata failed; retained unverified evidence, migrations halted."
+                    exit 1
+                  fi
+                  while IFS= read -r expired; do
+                    rm -f "$expired" "$expired.metadata.json"
+                  done < <(ls -t "$DEPLOY_PATH/backups"/pre_deploy_*.sql.gz 2>/dev/null | tail -n +6)
+                  echo "==> Snapshot created: $BACKUP_FILE (metadata: $BACKUP_FILE.metadata.json)"
+                  echo "==> Manual recovery: https://github.com/vstore-ex/Docs/blob/main/infra/database-recovery.md"
                 else
-                  rm -f "${BACKUP_FILE}.tmp"
+                  rm -f "$SNAPSHOT_TMP"
                   echo "ERROR: Database snapshot is empty ($BACKUP_SIZE bytes). Halting deploy."
                   exit 1
                 fi
               else
-                rm -f "${BACKUP_FILE}.tmp"
+                rm -f "$SNAPSHOT_TMP"
                 echo "ERROR: pg_dump failed. Halting deploy before migrations."
                 exit 1
               fi
@@ -166,20 +178,20 @@ jobs:
               echo "ERROR: Health check failed for $SERVICES!"
               release_compose logs --tail=50 $SERVICES || true
               if [ -n "$PREV_IMAGE" ]; then
+                echo "==> Automatic rollback restores images only; database schema is NOT downgraded."
+                if [ "$RUN_MIGRATIONS" = "true" ]; then
+                  echo "==> Snapshot: ${BACKUP_FILE:-none}; previous revision: $PREV_MIGRATION"
+                  echo "==> Pause deploys, stop all writers and restore into a NEW database; never pipe this dump into a nonempty database."
+                  echo "==> Verified recovery and escape path: https://github.com/vstore-ex/Docs/blob/main/infra/database-recovery.md"
+                  echo "==> A schema downgrade requires backend-owner review of migration support and data loss; it is never automatic."
+                fi
                 echo "==> Rolling back to previous image: $PREV_IMAGE"
                 export "$IMAGE_VAR=$PREV_IMAGE"
                 release_compose up -d --no-deps --wait $SERVICES
                 curl -fsS --retry 14 --retry-delay 3 --retry-all-errors --max-time 5 "$HEALTH_URL" > /dev/null
                 python3 scripts/proxy-health.py recover
                 release_state commit "$IMAGE_VAR" "$PREV_IMAGE"
-                echo "==> Container image rolled back. SCOPE OF AUTOMATIC ROLLBACK IS THE IMAGE ONLY."
-                echo "==> Database schema is NOT downgraded automatically."
-                if [ "$RUN_MIGRATIONS" = "true" ] && [ "$PREV_MIGRATION" != "unknown" ]; then
-                  echo "==> Options if the old image fails against the new schema:"
-                  echo "    1. Manual schema restore from snapshot (DESTRUCTIVE, replaces current data):"
-                  echo "       gunzip -c ${BACKUP_FILE:-<snapshot>} | bash scripts/compose.sh exec -T postgres psql -U \$POSTGRES_USER \$POSTGRES_DB"
-                  echo "    2. alembic downgrade $PREV_MIGRATION (if the revision supports downgrade)"
-                fi
+                echo "==> Container image rolled back; database schema was not downgraded."
               else
                 echo "==> No previous image recorded, skipping rollback."
               fi

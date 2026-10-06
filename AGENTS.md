@@ -45,7 +45,7 @@ Reverse proxy (nginx) lives **inside the `frontend`/`admin` images** — edge TL
 ### 🔄 5. Rollback Preflight & Image Pinning
 - App deploys load verified digests from the host-local `docker-compose.override.yml` under the shared flock, then test candidates with `release_compose` (base file plus exported `*_IMAGE`). Never rely on `:latest` for a deploy or a rollback. Publish current and previous digests atomically only after health and image verification; see `docs/releases.md`.
 - The deploy preflight refuses to run if the current container's image has no `RepoDigests` (no valid rollback target). `RepoDigests` lives on the **image** — it must be read via two-step inspect (container `.Image` → image). Do not "simplify" this back to a single inspect.
-- Rollback restores the container image only. DB schema is never downgraded automatically; the deploy job prints the snapshot-restore and `alembic downgrade` paths.
+- Rollback restores the container image only. DB schema is never downgraded automatically; the deploy job links the [verified manual database recovery procedure](https://github.com/vstore-ex/Docs/blob/main/infra/database-recovery.md). Restore only into a new database with stopped writers; automatic destructive restore and unreviewed downgrade hints are prohibited.
 
 ### 🔄 6. Migration Ownership
 - Alembic migrations run in the app repo's deploy job (`deploy-service.yml`, `run-migrations: true`) behind a `pg_dump` snapshot. Worker sets `AUTO_MIGRATE=false`. Do not add `command: alembic upgrade ...` to compose.
