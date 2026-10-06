@@ -1,0 +1,13 @@
+[Unit]
+Description=Check weekly VStore backup on boot and retry missed/failed runs
+
+[Timer]
+OnBootSec=1min
+OnUnitInactiveSec=15min
+OnCalendar=hourly
+Persistent=true
+AccuracySec=1min
+Unit=vstore-backup.service
+
+[Install]
+WantedBy=timers.target
