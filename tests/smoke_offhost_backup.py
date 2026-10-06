@@ -73,6 +73,15 @@ with tempfile.TemporaryDirectory(prefix='vstore-offhost-drill-') as temporary:
         return compose('exec', '-T', 'postgres', 'psql', '-X', '-qAt', '-v', 'ON_ERROR_STOP=1',
                        '-U', 'postgres', '-d', database, input=query.encode(), cwd=cwd, env=env).decode().strip()
 
+    def release_bind_ownership(path):
+        # Linux preserves UID10001 on real bind mounts. Restore only this
+        # fixture's ownership after verification so the runner can delete it.
+        if path.exists():
+            assert path.parent in (source, root / 'replacement-host') and not path.is_symlink()
+            execute('docker', 'run', '--rm', '--network', 'none', '--read-only',
+                    '--mount', f'type=bind,src={path.resolve()},dst=/state', '--entrypoint', 'chown',
+                    pg_digest, '-hR', f'{os.getuid()}:{os.getgid()}', '/state')
+
     try:
         key = base64.b64encode(secrets.token_bytes(32)).decode()
         execute('docker', 'run', '-d', '--name', emulator, '-p', '127.0.0.1::10000',
@@ -164,6 +173,7 @@ with tempfile.TemporaryDirectory(prefix='vstore-offhost-drill-') as temporary:
         # Remove all source containers/volumes, local deployment state, and live media.
         compose('down', '--volumes', '--remove-orphans')
         media.delete_container()
+        release_bind_ownership(source / 'storage')
         shutil.rmtree(source)
         assert not source.exists()
         began = time.monotonic()
@@ -204,6 +214,10 @@ with tempfile.TemporaryDirectory(prefix='vstore-offhost-drill-') as temporary:
                    env=replacement_env, database='recovery_verified') == 't'
         assert compose('exec', '-T', 'redis', 'redis-cli', 'GET', 'auth:revoked:fixture', cwd=new_host, env=replacement_env).strip() == b'retained'
         assert (new_host / 'storage/game.dat').read_bytes() == b'local application bytes'
+        assert execute('docker', 'run', '--rm', '--network', 'none', '--user', '10001:10001',
+                       '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
+                       '--mount', f'type=bind,src={(new_host / "storage").resolve()},dst=/state,readonly',
+                       '--entrypoint', 'cat', pg_digest, '/state/game.dat') == b'local application bytes'
         for volume, path, value in ((replacement + '_uploads_temp', 'chunk', b'partial-upload'),
                                     (replacement + '_certbot_certs', 'live/site/key.pem', b'fixture-key')):
             assert execute('docker', 'run', '--rm', '--network', 'none', '-v', volume + ':/state:ro',
@@ -235,9 +249,11 @@ with tempfile.TemporaryDirectory(prefix='vstore-offhost-drill-') as temporary:
         os.chdir(ROOT)
         if source.exists():
             subprocess.run(['docker', 'compose', 'down', '--volumes', '--remove-orphans'], cwd=source, env=environment, capture_output=True)
+            release_bind_ownership(source / 'storage')
         if 'new_host' in locals() and new_host.exists():
             subprocess.run(['docker', 'compose', 'down', '--volumes', '--remove-orphans'], cwd=new_host,
                            env={**os.environ, 'COMPOSE_PROJECT_NAME': replacement}, capture_output=True)
+            release_bind_ownership(new_host / 'storage')
         for volume in volumes:
             subprocess.run(['docker', 'volume', 'rm', volume], capture_output=True)
         subprocess.run(['docker', 'rm', '-f', emulator], capture_output=True)
