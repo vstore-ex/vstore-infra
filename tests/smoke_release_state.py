@@ -78,9 +78,24 @@ with tempfile.TemporaryDirectory(prefix="vstore-release-smoke-") as directory:
         services["proxy"] = {
             "image": proxy_image, "build": {"context": "config/nginx"},
             "healthcheck": services["admin"]["healthcheck"],
+            "volumes": ["./config/nginx/templates:/etc/nginx/templates:ro"],
         }
-        Path("config/nginx").mkdir(parents=True)
-        Path("config/nginx/Dockerfile").write_text("FROM " + old + "\n")
+        Path("config/nginx/templates").mkdir(parents=True)
+        dockerfile = Path("config/nginx/Dockerfile")
+        template = Path("config/nginx/templates/release.conf.template")
+
+        def proxy_fixture(marker):
+            dockerfile.write_text("FROM " + old + "\nENV VSTORE_PROXY_RELEASE=" + marker + "\n")
+            template.write_text('server { listen 8081; location /release { return 200 "' + marker + '"; } }\n')
+
+        def proxy_expected(marker):
+            container = run('docker', 'compose', 'ps', '-q', 'proxy')
+            environment_values = json.loads(run('docker', 'inspect', '--format', '{{json .Config.Env}}', container))
+            assert 'VSTORE_PROXY_RELEASE=' + marker in environment_values, environment_values
+            assert run('docker', 'compose', 'exec', '-T', 'proxy', 'wget', '-qO-',
+                       'http://127.0.0.1:8081/release') == marker
+
+        proxy_fixture('initial')
         Path("docker-compose.yml").write_text(json.dumps({"services": services}))
         Path(".env").write_text("\n".join(f"{key}={old}" for key in release.GROUPS) + "\n")
         run("git", "init", "--initial-branch=main")
@@ -93,7 +108,8 @@ with tempfile.TemporaryDirectory(prefix="vstore-release-smoke-") as directory:
         # The remote infra commit changes config while the host stays at the old commit.
         services["frontend"]["labels"] = {"release-smoke-config": "updated"}
         Path("docker-compose.yml").write_text(json.dumps({"services": services}))
-        run("git", "add", "docker-compose.yml")
+        proxy_fixture('updated')
+        run("git", "add", "docker-compose.yml", "config")
         run("git", "commit", "-m", "test: update disposable infra configuration")
         run("git", "push", "origin", "main")
         run("git", "reset", "--hard", "HEAD^")
@@ -131,8 +147,21 @@ with tempfile.TemporaryDirectory(prefix="vstore-release-smoke-") as directory:
         run("bash", "scripts/compose.sh", "up", "-d", "--wait", "--wait-timeout", "60", env=fresh)
         subprocess.run(["bash", "-c", infra_script], env={**fresh, "PATH": environment["PATH"]}, check=True)
         expected(new)
+        proxy_expected('updated')
         assert json.loads(run("docker", "compose", "config", "--format", "json"))["services"]["frontend"]["labels"]["release-smoke-config"] == "updated"
         print("PASS: app deployment survives fresh-session manual/infra convergence")
+
+        # A template-only update must render even though Compose's service hash
+        # and the locally built image do not change.
+        template.write_text('server { listen 8081; location /release { return 200 "template-only"; } }\n')
+        run('git', 'add', str(template))
+        run('git', 'commit', '-m', 'test: change only edge template')
+        run('git', 'push', 'origin', 'main')
+        run('git', 'reset', '--hard', 'HEAD^')
+        subprocess.run(['bash', '-c', infra_script], env={**fresh, 'PATH': environment['PATH']}, check=True)
+        assert run('docker', 'compose', 'exec', '-T', 'proxy', 'wget', '-qO-',
+                   'http://127.0.0.1:8081/release') == 'template-only'
+        print('PASS: template-only infra update renders the new edge config')
 
         release.HEALTH_URLS["FRONTEND_IMAGE"] = health
         with release.locked(None):
@@ -183,7 +212,8 @@ with tempfile.TemporaryDirectory(prefix="vstore-release-smoke-") as directory:
                         "raise SystemExit(1 if data['services']['frontend'].get('labels',{}).get('broken-api') else 0)\n")
         services['frontend']['labels']['broken-api'] = 'true'
         Path('docker-compose.yml').write_text(json.dumps({'services': services}))
-        run('git', 'add', 'scripts/proxy-health.py', 'docker-compose.yml')
+        proxy_fixture('broken')
+        run('git', 'add', 'scripts/proxy-health.py', 'docker-compose.yml', 'config')
         run('git', 'commit', '-m', 'test: candidate config with broken API')
         run('git', 'push', 'origin', 'main')
         run('git', 'reset', '--hard', legacy)
@@ -193,7 +223,12 @@ with tempfile.TemporaryDirectory(prefix="vstore-release-smoke-") as directory:
         assert not gate.exists()
         assert release.STATE.read_bytes() == before
         expected(old)
+        container = run('docker', 'compose', 'ps', '-q', 'proxy')
+        assert 'VSTORE_PROXY_RELEASE=updated' in json.loads(run('docker', 'inspect', '--format', '{{json .Config.Env}}', container))
+        assert run('docker', 'compose', 'exec', '-T', 'proxy', 'wget', '-qO-',
+                   'http://127.0.0.1:8081/release') == 'template-only'
         print('PASS: infra API gate rolls back config even when the legacy commit lacks the helper')
+        print('PASS: config rollback rebuilds the previous proxy image and re-renders its template')
     finally:
         # Only the unique disposable project is removed; never touch production.
         subprocess.run(["docker", "compose", "down", "--volumes", "--remove-orphans"], check=False)
