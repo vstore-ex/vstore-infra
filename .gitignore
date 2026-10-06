@@ -17,5 +17,6 @@ storage/
 docker-compose.override.yml
 .release-state-*
 .deploy.lock
+backups/
 node_modules/
 __pycache__/

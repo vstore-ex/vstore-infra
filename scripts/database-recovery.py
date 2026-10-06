@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from urllib.parse import urlsplit
 
 spec = importlib.util.spec_from_file_location('release_state', Path(__file__).with_name('release-state.py'))
 release = importlib.util.module_from_spec(spec)
@@ -22,12 +23,37 @@ def compose(*args, **kwargs):
     return subprocess.run(['docker', 'compose', *args], check=True, **kwargs)
 
 
+def source_database():
+    # POSTGRES_DB is only the initial-volume database, which can differ from
+    # the application's current database after a manual recovery/cutover.
+    result = compose('config', '--format', 'json', stdout=subprocess.PIPE, text=True)
+    url = json.loads(result.stdout)['services']['backend']['environment']['DATABASE_URL']
+    try:
+        # urlsplit discards control characters that SQLAlchemy preserves.
+        if not isinstance(url, str) or re.search(r'[\x00-\x1f\x7f]', url):
+            raise ValueError('Invalid database URL')
+        parsed = urlsplit(url)
+        # SQLAlchemy leaves the database path literal; percent-decoding here
+        # could silently select a different database than the application.
+        database = parsed.path.removeprefix('/')
+        valid = (parsed.scheme.split('+', 1)[0] in ('postgres', 'postgresql')
+                 and parsed.hostname == 'postgres' and parsed.port in (None, 5432)
+                 and not parsed.query and not parsed.fragment
+                 and re.fullmatch(r'[A-Za-z0-9_][A-Za-z0-9_-]{0,62}', database))
+    except (TypeError, ValueError):
+        valid = False
+    if not valid:
+        # Never include the connection URL or credentials in errors.
+        raise ValueError('DATABASE_URL must identify a database on postgres:5432 without connection overrides')
+    return database
+
+
 def psql(sql=None, database=None, stream=None, transaction=False):
     # Resolve credentials inside the existing PostgreSQL container. -X excludes
     # psql startup output; SQL errors must stop scripts with a nonzero exit code.
     command = ['exec', '-T', 'postgres', 'sh', '-c',
                'db="${1:-$POSTGRES_DB}"; shift; exec psql -X -q -A -t -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$db" "$@"']
-    command += ['recovery-psql', database or '']
+    command += ['recovery-psql', database or source_database()]
     if transaction:
         command += ['--single-transaction', '-f', '-']
     result = compose(*command, input=sql, stdin=stream, stdout=subprocess.PIPE, text=stream is None)
@@ -53,8 +79,11 @@ def revision(database=None):
 
 
 def digest(path):
+    checksum = hashlib.sha256()
     with open(path, 'rb') as stream:
-        return hashlib.file_digest(stream, 'sha256').hexdigest()
+        for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+            checksum.update(chunk)
+    return checksum.hexdigest()
 
 
 def record(path, expected, image=None):
@@ -124,6 +153,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--lock-fd', type=int)
     commands = parser.add_subparsers(dest='command', required=True)
+    commands.add_parser('source-database')
     query = commands.add_parser('revision')
     query.add_argument('--database')
     metadata = commands.add_parser('record')
@@ -137,7 +167,9 @@ def main():
     recovery.add_argument('--writers-stopped', required=True, action='store_true', help='Acknowledge maintenance mode and external writers are stopped')
     args = parser.parse_args()
     with release.locked(args.lock_fd):
-        if args.command == 'revision':
+        if args.command == 'source-database':
+            print(source_database())
+        elif args.command == 'revision':
             print(revision(args.database))
         elif args.command == 'record':
             record(args.snapshot, args.revision, args.image)

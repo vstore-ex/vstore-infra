@@ -108,6 +108,7 @@ jobs:
             release_compose pull $SERVICES
 
             if [ "$RUN_MIGRATIONS" = "true" ]; then
+              SOURCE_DATABASE=$(python3 scripts/database-recovery.py --lock-fd 200 source-database)
               PREV_MIGRATION=$(python3 scripts/database-recovery.py --lock-fd 200 revision)
               echo "==> Current Alembic revision: $PREV_MIGRATION"
 
@@ -115,7 +116,7 @@ jobs:
               mkdir -p "$DEPLOY_PATH/backups"
               SNAPSHOT_TMP=$(mktemp "$DEPLOY_PATH/backups/pre_deploy_$(date +%Y%m%d_%H%M%S)_XXXXXX")
               BACKUP_FILE="$SNAPSHOT_TMP.sql.gz"
-              if release_compose exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' | gzip > "$SNAPSHOT_TMP"; then
+              if release_compose exec -T postgres sh -c 'exec pg_dump -U "$POSTGRES_USER" -d "$1"' snapshot-pg-dump "$SOURCE_DATABASE" | gzip > "$SNAPSHOT_TMP"; then
                 BACKUP_SIZE=$(python3 -c 'import os,sys; print(os.path.getsize(sys.argv[1]))' "$SNAPSHOT_TMP")
                 if [ "$BACKUP_SIZE" -gt 200 ]; then
                   mv "$SNAPSHOT_TMP" "$BACKUP_FILE"

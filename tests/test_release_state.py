@@ -76,6 +76,43 @@ class ReleaseStateTests(unittest.TestCase):
                 release.save({**self.current, "FRONTEND_IMAGE": image("d")}, self.previous)
         self.assertEqual(release.STATE.read_bytes(), before)
 
+    def test_directory_sync_failure_restores_release_and_previous_history(self):
+        self.previous["FRONTEND_IMAGE"] = image("e")
+        before = self.save()
+        failure = OSError("publication directory sync failed")
+        for restore_sync in (None, OSError("restoration directory sync failed")):
+            with self.subTest(restore_sync=restore_sync), \
+                    patch.object(release, "verify"), \
+                    patch.object(release.os, "fsync", side_effect=[None, None, failure, restore_sync]):
+                with self.assertRaises(OSError) as result:
+                    release.commit("FRONTEND_IMAGE", image("d"))
+            self.assertIs(result.exception, failure)
+            self.assertEqual(release.STATE.read_bytes(), before)
+            self.assertEqual(release.load(), (self.current, self.previous))
+            self.assertEqual(list(Path(".").glob(".release-state-*")), [])
+
+    def test_directory_sync_failure_leaves_no_bootstrap_state(self):
+        with patch.object(release, "running_image", return_value=image("a")), \
+                patch.object(release.os, "fsync", side_effect=[None, OSError("directory sync failed"), None]):
+            with self.assertRaises(OSError):
+                release.bootstrap()
+        self.assertFalse(release.STATE.exists())
+        self.assertEqual(list(Path(".").glob(".release-state-*")), [])
+
+    def test_failed_rollback_publication_restores_current_images_and_state(self):
+        self.previous["FRONTEND_IMAGE"] = image("d")
+        before = self.save()
+        with patch.object(release, "candidate_compose") as compose, \
+                patch.object(release, "check_http"), \
+                patch.object(release, "recover_proxies"), \
+                patch.object(release, "verify"), \
+                patch.object(release.os, "fsync", side_effect=[None, None, OSError("directory sync failed"), None]):
+            with self.assertRaises(OSError):
+                release.rollback("FRONTEND_IMAGE")
+        self.assertEqual(compose.call_args.args[0], self.current)
+        self.assertEqual(release.STATE.read_bytes(), before)
+        self.assertEqual(release.load(), (self.current, self.previous))
+
     def test_release_file_is_private(self):
         self.save()
         self.assertEqual(release.STATE.stat().st_mode & 0o777, 0o600)

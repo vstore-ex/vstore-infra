@@ -8,6 +8,10 @@ admin, plus previous successful images in `x-vstore-release`. Current and previo
 images are written in one atomic rename after file fsync; the directory is also
 fsynced. Permissions are 0600. The file contains image references only, never
 environment secrets. Keep it outside Git and preserve it across config updates.
+If directory fsync fails after publication, the helper restores the previously
+visible state before reporting failure, so image rollback agrees with Compose.
+If the filesystem also prevents restoration, the error identifies a retained
+private backup for operator recovery.
 
 All deployment writers share `.deploy.lock`. The workflows inherit descriptor
 200; the manual wrapper locks the same file until a mutating command exits, with
@@ -119,3 +123,30 @@ tests a new SSH-like session with stale pins, intentional rollback, failed HTTP
 verification and interrupted-candidate recovery. Its Docker shim suppresses the
 workflow's global image prune; cleanup removes only its own test project.
 These checks do not deploy production or validate database migrations.
+
+## Infrastructure and certificate convergence
+
+Infrastructure CD rebuilds and recreates the edge proxy after stack convergence,
+including during config rollback. Recreation renders bind-mounted templates;
+Nginx reload alone does not apply a changed template. This briefly restarts the
+edge proxy. Manual Infra CI dispatch deploys only from `main`, after validation.
+
+`scripts/init-letsencrypt.sh` requires Linux `flock` and holds the shared lock for
+certificate issuance and verification. It loads the saved image digests and
+starts the HTTP challenge proxy before issuance. It reloads dependent Nginx
+proxies and requires the HTTPS API gate only after Certbot succeeds. Public
+staging certificates still fail the production PKI gate. The existing guidance
+on unmanaged dummy certificate directories in README applies.
+
+## Database snapshots
+
+Snapshot, revision and metadata queries resolve the application database from
+the Compose backend `DATABASE_URL`, rather than the initial-volume `POSTGRES_DB`.
+This preserves recovery coverage after a database cutover. The URL must select
+the internal `postgres` service on port 5432, with a simple database name and no
+query or fragment connection overrides; unsupported URLs halt migration before
+dumping another database. Credentials are never printed by this preflight.
+
+The helper computes SHA-256 incrementally, including on Python 3.10 hosts.
+Host-local `backups/` is ignored by Git. Recovery still creates a new database,
+verifies its data and revision, and leaves activation to the operator.
