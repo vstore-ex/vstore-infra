@@ -29,6 +29,9 @@ jobs:
       - name: Validate docker-compose configuration
         run: docker compose config --quiet
 
+      - name: Verify capacity experiment isolation and memory accounting
+        run: python3 -m unittest discover -s tests -p 'test_capacity_lab.py' -v
+
       - name: Verify proxy bootstrap without certificates
         run: bash tests/smoke-proxy.sh
 

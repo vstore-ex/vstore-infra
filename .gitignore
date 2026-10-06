@@ -20,3 +20,5 @@ docker-compose.override.yml
 backups/
 node_modules/
 __pycache__/
+.capacity-cache/
+.capacity-results/

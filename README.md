@@ -152,6 +152,13 @@ Run `bash tests/smoke-proxy.sh` to build and start the hardened proxy with an em
 For a public storefront hostname and a local admin hostname, set `ADMIN_CERT_NAME` to the existing local certificate directory (for example `vstore.local`) and `CERTBOT_INCLUDE_ADMIN_DOMAIN=0`. Issue the public certificate before switching `FRONTEND_DOMAIN`, so the fallback generator does not create an unmanaged directory at the intended Certbot certificate path. The admin continues to use its self-signed certificate.
 
 
+## Capacity planning
+
+Capacity planning has an opt-in isolated laboratory for catalog/media and
+deployment overlap. See [capacity experiments](docs/capacity.md) and the
+[2026-10-07 measurements](docs/capacity-2026-10-07.md). The proposed profile is
+test-only; it does not resize or change the running production stack.
+
 ## Commit messages
 
 Run `npm ci` with Node.js 22.12+ to enable the local Conventional Commits
