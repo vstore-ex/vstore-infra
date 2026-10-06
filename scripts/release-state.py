@@ -247,7 +247,7 @@ def locked(inherited_fd):
             if (actual.st_dev, actual.st_ino) != (inherited.st_dev, inherited.st_ino):
                 raise ValueError("Inherited deployment lock does not match this stack")
             fcntl.flock(inherited_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        yield
+        yield inherited_fd if inherited_fd is not None else stream.fileno()
 
 
 def main():
@@ -273,7 +273,7 @@ def main():
     read_only = args.command == "compose" and args.args and args.args[0] in (
         "logs", "ps", "config", "images", "top", "events", "version",
     )
-    with contextlib.nullcontext() if read_only else locked(args.lock_fd):
+    with (contextlib.nullcontext() if read_only else locked(args.lock_fd)) as lock_fd:
         if args.command == "bootstrap":
             bootstrap(args.if_missing, args.proxy_image)
         elif args.command == "commit":
@@ -291,6 +291,9 @@ def main():
                 verify(current, healthy=args.command == "verify")
             else:
                 # The default override also protects plain docker compose in fresh sessions.
+                if args.args and args.args[0] in ("up", "restart", "start"):
+                    subprocess.run([sys.executable, "scripts/redis-policy.py", "--lock-fd",
+                                    str(lock_fd), "check"], pass_fds=(lock_fd,), check=True)
                 result = subprocess.call(["docker", "compose", *args.args])
                 if result == 0 and args.args and args.args[0] in ("up", "restart", "start"):
                     recover_proxies()

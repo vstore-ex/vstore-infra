@@ -47,6 +47,12 @@ Reverse proxy (nginx) lives **inside the `frontend`/`admin` images** — edge TL
 - The deploy preflight refuses to run if the current container's image has no `RepoDigests` (no valid rollback target). `RepoDigests` lives on the **image** — it must be read via two-step inspect (container `.Image` → image). Do not "simplify" this back to a single inspect.
 - Rollback restores the container image only. DB schema is never downgraded automatically; the deploy job links the [verified manual database recovery procedure](https://github.com/vstore-ex/Docs/blob/main/infra/database-recovery.md). Restore only into a new database with stopped writers; automatic destructive restore and unreviewed downgrade hints are prohibited.
 
+### Redis state (A07)
+- Redis shares broker/auth/cache state. Keep `noeviction`, 64 MiB `maxmemory` and the 256 MiB container ceiling; never enable TTL-based cache eviction here.
+- Existing RDB-only data requires approved live conversion with stopped writers (`scripts/compose.sh redis-adopt`) before recreation. Deployment/manual convergence fails closed until AOF is ready. Never disable AOF or remove its files to bypass the guard.
+- Infra rollback retains the adopted Redis command. After rollback to pre-A07 Git config, restore compatible Redis config/helpers before further operations. The temporary override protects the current rollback only.
+- Backend fail-open and URL/DB precedence are separate handoffs. Owner acceptance of the loss/error contract is required; fixture baseline tests do not fix application security. See [Redis policy and adoption](https://github.com/vstore-ex/Docs/blob/main/infra/redis-state.md).
+
 ### 🔄 6. Migration Ownership
 - Alembic migrations run in the app repo's deploy job (`deploy-service.yml`, `run-migrations: true`) behind a `pg_dump` snapshot. Worker sets `AUTO_MIGRATE=false`. Do not add `command: alembic upgrade ...` to compose.
 - Every model change requires a migration in the same PR — prod has already been bitten by model columns with no migration (schema drift, found via `alembic check`).
