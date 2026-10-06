@@ -336,6 +336,13 @@ def wait_release(current):
             time.sleep(3)
 
 
+def ensure_quiesced(containers):
+    for container in containers.values():
+        state = json.loads(run('docker', 'inspect', '--format', '{{json .State}}', container))
+        if state.get('Running') or state.get('OOMKilled') or state.get('ExitCode') not in (0, 143):
+            raise ValueError('Writer did not stop cleanly; drain active work before retrying backup')
+
+
 def backup(config, if_due=False):
     # Nothing except the root/lock may be traversed before acquiring shared flock.
     permissions.secure(Path.cwd(), lock_only=True)
@@ -379,6 +386,7 @@ def backup(config, if_due=False):
                 if run('docker', 'compose', 'exec', '-T', 'redis', 'redis-cli', 'SAVE', text=True).strip() != 'OK':
                     raise ValueError('Redis snapshot failed')
                 run('docker', 'compose', 'stop', '--timeout', '120', 'redis')
+                ensure_quiesced(restart)
                 point = datetime.now(timezone.utc).isoformat()
                 database = recovery.source_database()
                 revision = recovery.revision()

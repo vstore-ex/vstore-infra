@@ -182,6 +182,16 @@ class OffhostBackupTests(unittest.TestCase):
                     backup.remember_running({'backend': 'a' * 64, 'worker': ''})
             self.assertFalse(path.exists())
 
+    def test_forced_or_failed_writer_stop_cannot_be_a_consistent_recovery_point(self):
+        for state in ({'Running': False, 'ExitCode': 137}, {'Running': False, 'ExitCode': 1},
+                      {'Running': False, 'ExitCode': 0, 'OOMKilled': True}, {'Running': True, 'ExitCode': 0}):
+            with patch.object(backup, 'run', return_value=json.dumps(state).encode()):
+                with self.assertRaises(ValueError):
+                    backup.ensure_quiesced({'worker': 'a' * 64})
+        for code in (0, 143):
+            with patch.object(backup, 'run', return_value=json.dumps({'Running': False, 'ExitCode': code}).encode()):
+                backup.ensure_quiesced({'worker': 'a' * 64})
+
     def test_manual_release_mutation_refuses_interrupted_backup(self):
         previous = Path.cwd()
         with tempfile.TemporaryDirectory() as directory:
