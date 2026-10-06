@@ -164,6 +164,8 @@ class OffhostBackupTests(unittest.TestCase):
         for filename in ('ci.yml', 'deploy-service.yml'):
             workflow = (ROOT / '.github/workflows' / filename).read_text()
             self.assertLess(workflow.index('flock -w 300 200'), workflow.index('if [ -f backups/.offhost-resume.json ]'))
+            if filename == 'ci.yml':
+                self.assertLess(workflow.index('if [ -f backups/.offhost-resume.json ]'), workflow.index('git reset --hard origin/main'))
 
     def test_resume_journal_write_failure_never_publishes_partial_marker(self):
         with tempfile.TemporaryDirectory() as directory:

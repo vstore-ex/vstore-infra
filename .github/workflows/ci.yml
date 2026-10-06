@@ -254,6 +254,11 @@ jobs:
             echo "==> Acquiring deployment lock..."
             flock -w 300 200 || { echo "ERROR: Timeout waiting for deployment lock!"; exit 1; }
 
+            if [ -f backups/.offhost-resume.json ]; then
+              echo "ERROR: Interrupted backup requires scripts/offhost-backup.py resume before deployment."
+              exit 1
+            fi
+
             PREV_GIT_COMMIT=$(git rev-parse HEAD 2>/dev/null || true)
             echo "==> Pre-deploy commit: ${PREV_GIT_COMMIT:-none}"
 
@@ -264,10 +269,6 @@ jobs:
 
             # Adopt healthy running digests once, then ignore stale .env image pins.
             python3 scripts/secure-deployment.py
-            if [ -f backups/.offhost-resume.json ]; then
-              echo "ERROR: Interrupted backup requires scripts/offhost-backup.py resume before deployment."
-              exit 1
-            fi
             source scripts/release-state.sh
             release_load
             # Keep the new gate available even when the previous config commit
