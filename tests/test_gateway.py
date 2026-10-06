@@ -174,7 +174,8 @@ class TestEdgeGatewayConfig(unittest.TestCase):
         self.assertIn("CERTBOT_STAGING", script_content, "Script must support CERTBOT_STAGING")
         self.assertIn("certonly", script_content, "Script must invoke certbot certonly")
         self.assertIn("--webroot", script_content, "Script must use webroot plugin")
-        self.assertIn("nginx -s reload", script_content, "Script must signal Nginx reload")
+        self.assertIn("scripts/proxy-health.py recover", script_content,
+                      "Script must reload dependent proxies and verify HTTPS after issuance")
 
         # Entrypoint must be exec-form (single binary), not a multi-word shell string
         self.assertIn("--entrypoint certbot certbot", script_content,
@@ -235,5 +236,4 @@ class TestEdgeGatewayConfig(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
 

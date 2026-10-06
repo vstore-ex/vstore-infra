@@ -10,6 +10,13 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 cd "${ROOT_DIR}"
 
+# Hold the deployment lock through issuance and the final HTTPS check. The
+# normal compose wrapper verifies HTTPS after up, before a new cert exists.
+exec 200>.deploy.lock
+flock -w 300 200
+# shellcheck disable=SC1091
+source scripts/release-state.sh
+
 # Source environment variables if .env is present
 if [ -f .env ]; then
   # shellcheck disable=SC1091
@@ -17,6 +24,8 @@ if [ -f .env ]; then
   source .env
   set +a
 fi
+
+release_load
 
 FRONTEND_DOMAIN="${FRONTEND_DOMAIN:-vstore.local}"
 ADMIN_DOMAIN="${ADMIN_DOMAIN:-admin.vstore.local}"
@@ -36,7 +45,7 @@ echo "================================================================="
 
 # Ensure edge proxy is up to serve /.well-known/acme-challenge/ on port 80
 echo "==> Ensuring Edge Reverse Proxy is running..."
-bash scripts/compose.sh up -d proxy
+release_compose up -d --wait --wait-timeout 150 proxy
 
 # Build certbot command arguments as a proper bash array.
 # Each element stays a discrete argument through "${array[@]}" expansion,
@@ -73,11 +82,11 @@ fi
 
 echo "==> Requesting TLS certificate from Let's Encrypt via HTTP-01 webroot challenge..."
 # Use exec-form entrypoint (single binary) with arguments passed as CMD.
-# This avoids shell-form entrypoint fragility where bash scripts/compose.sh run
+# This avoids shell-form entrypoint fragility where docker compose run
 # --entrypoint may interpret a multi-word string as a single executable name.
-bash scripts/compose.sh run --rm --entrypoint certbot certbot "${CERTBOT_ARGS[@]}"
+release_compose run --rm --entrypoint certbot certbot "${CERTBOT_ARGS[@]}"
 
 echo "==> Reloading Nginx edge proxy configuration to apply new certificates..."
-bash scripts/compose.sh exec proxy nginx -s reload
+python3 scripts/proxy-health.py recover
 
 echo "==> Let's Encrypt TLS bootstrap completed successfully."

@@ -74,6 +74,7 @@ bash scripts/compose.sh bootstrap   # record verified images before enabling CD
 bash scripts/compose.sh ps      # verify all services report healthy
 
 # Initial TLS Certificate Acquisition (first run on production host):
+# Requires Linux flock; HTTPS verification runs after certificate issuance.
 ./scripts/init-letsencrypt.sh
 ```
 
