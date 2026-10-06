@@ -16,7 +16,7 @@ External traffic enters exclusively via the **Edge Reverse Proxy** (`proxy`) on 
                                   │
                                   ▼
                  ┌───────────────────────────────────┐
-                 │       Edge Gateway (proxy)        │ (Nginx 1.27, SSL termination)
+                 │       Edge Gateway (proxy)        │ (Nginx stable, SSL termination)
                  └───────────────┬───┬───────────────┘
                                  │   │
         Host: ${FRONTEND_DOMAIN} │   │ Host: ${ADMIN_DOMAIN}
@@ -53,7 +53,7 @@ External traffic enters exclusively via the **Edge Reverse Proxy** (`proxy`) on 
 
 | Service | Image | Host Binding | Health Check | Limits |
 | :--- | :--- | :--- | :--- | :--- |
-| `proxy` | `nginx:1.27-alpine` | `0.0.0.0:80`, `0.0.0.0:443` | `GET /healthz` | 0.5 CPU, 256M |
+| `proxy` | `ghcr.io/vstore-ex/vstore-infra-proxy` | `0.0.0.0:80`, `0.0.0.0:443` | `GET /healthz` | 0.5 CPU, 256M |
 | `certbot` | `certbot/certbot:v3.1.0` | — | on-boot renewal loop (1h interval) | 0.2 CPU, 128M |
 | `frontend` | `ghcr.io/vstore-ex/vstore-front` | `127.0.0.1:3000` (container `8080`) | `GET /healthz` | 0.5 CPU, 256M |
 | `admin` | `ghcr.io/vstore-ex/vstore-admin` | `127.0.0.1:3001` (container `8080`) | `GET /healthz` | 0.5 CPU, 256M |
@@ -67,10 +67,11 @@ External traffic enters exclusively via the **Edge Reverse Proxy** (`proxy`) on 
 ```bash
 cp .env.example .env   # configure FRONTEND_DOMAIN, ADMIN_DOMAIN, CERTBOT_EMAIL, POSTGRES_PASSWORD, etc.
 mkdir -p storage/media && sudo chown -R 10001:10001 storage   # appuser writable storage
-# For first installation, set all three *_IMAGE variables to reviewed registry digests.
+# For first installation, set all four *_IMAGE variables to reviewed registry digests.
+# PROXY_IMAGE must come from a successful Infra CI security gate.
 docker compose pull
 docker compose up -d --wait
-bash scripts/compose.sh bootstrap   # record verified images before enabling CD
+bash scripts/compose.sh bootstrap --proxy-image "$PROXY_IMAGE"  # export the reviewed digest first
 bash scripts/compose.sh ps      # verify all services report healthy
 
 # Initial TLS Certificate Acquisition (first run on production host):
@@ -82,7 +83,7 @@ Generate secrets with `openssl rand -hex 32`.
 
 ## 4. Image Pinning
 
-Verified current and previous application digests live together in the host-local
+Verified current and previous application and edge digests live together in the host-local
 `docker-compose.override.yml`. This generated JSON document is also valid YAML;
 Compose automatically loads it in a fresh session. Its literal image references
 override stale `.env` pins and exported `*_IMAGE` values. Do not commit or edit it.
@@ -90,7 +91,8 @@ override stale `.env` pins and exported `*_IMAGE` values. Do not commit or edit 
 Application CD loads the successful release under `.deploy.lock`, tests the
 candidate using the base Compose file and exported digests, then atomically
 publishes the override only after Compose, HTTP and running-image checks pass.
-Infra CD and manual commands use the same successful images. Intentional rollback
+Infra CD preserves successful application images and tests its scanned edge candidate.
+Manual commands use all successful images. Intentional rollback
 also publishes its verified target, so later infra deployment preserves it.
 
 Use `bash scripts/compose.sh` for manual operations to share the deployment lock.
@@ -125,7 +127,7 @@ docker compose config --quiet     # validate config before PRs
 
 `.github/workflows/`:
 
-* `ci.yml` — validates the compose file, then syncs config to the production host over SSH (`release_compose up -d --wait` with persisted application digests, flock-serialized, git-based rollback of config).
+* `ci.yml` — validates Compose, builds and scans the fresh edge runtime, and publishes that exact artifact to GHCR on `main`. SSH deployment pulls its immutable digest, preserves application pins, recreates the edge to render templates, and records successful state only after HTTPS API and image verification. Failure restores config and the previous edge artifact without rebuilding.
 * `build-and-push.yml` — **reusable** build job (`workflow_call`) used by all app repos: Buildx + GHA cache, Trivy scan, push to the caller's GHCR namespace, outputs the image digest.
 * `deploy-service.yml` — **reusable** deploy job used by all app repos: refuses to run if the currently running container's image has no registry digest (`RepoDigests` — no valid rollback target), pulls the digest-pinned image, optionally runs Alembic migrations behind a `pg_dump` snapshot, `up -d --wait`, health-check gate, automated rollback to the previous image digest (image only — schema restore is manual, commands are printed by the job).
 
@@ -140,9 +142,9 @@ App repos call these via `uses: vstore-ex/vstore-infra/.github/workflows/<file>.
 
 ### Proxy bootstrap verification
 
-The edge proxy builds from `config/nginx/Dockerfile`, which installs the OpenSSL CLI required for fallback certificates. Run `docker compose build proxy` before applying the stack. Individual entrypoint mounts preserve the official Nginx envsubst script; the renewal watchdog runs after template expansion.
+Infra CI builds the edge from `config/nginx/Dockerfile`, refreshes the Nginx stable base and runtime packages, and installs the OpenSSL CLI required for fallback certificates. The host pulls the scanned GHCR digest; Compose does not build the edge. Individual entrypoint mounts preserve the official Nginx envsubst script; the renewal watchdog runs after template expansion.
 
-Run `bash tests/smoke-proxy.sh` to build and start the hardened proxy with an empty certificate directory. The test checks certificate generation, template expansion, Nginx syntax, and HTTP health. Infra CD captures container health and logs before attempting a bounded config rollback.
+Run `bash tests/smoke-proxy.sh` to build and start the hardened proxy with an empty certificate directory, or supply an image ID/digest to test that exact artifact. The test checks certificate generation, template expansion, Nginx syntax, and HTTP health. Infra CD captures container health and logs before attempting a bounded config/artifact rollback. See [edge security gate and adoption](https://github.com/vstore-ex/Docs/blob/main/infra/edge-security.md).
 
 ### Azure DNS label with local admin
 

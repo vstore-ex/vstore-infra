@@ -1,3 +1,4 @@
-FROM nginx:1.27-alpine
+FROM nginx:stable-alpine AS runtime
 
-RUN apk add --no-cache openssl
+# CI uses --pull and disables this stage's cache on every security-gated build.
+RUN apk upgrade --no-cache && apk add --no-cache openssl

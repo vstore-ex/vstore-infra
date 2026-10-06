@@ -209,9 +209,8 @@ services:
       - CHOWN
       - SETUID
       - SETGID
-    image: vstore-proxy:local
-    build:
-      context: ./config/nginx
+    # Production consumes the artifact built, smoked and scanned by Infra CI.
+    image: ${PROXY_IMAGE:-ghcr.io/vstore-ex/vstore-infra-proxy:latest}
     restart: unless-stopped
     logging: *default-logging
     deploy:

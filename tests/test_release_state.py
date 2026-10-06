@@ -23,8 +23,8 @@ class ReleaseStateTests(unittest.TestCase):
         self.directory = tempfile.TemporaryDirectory()
         self.old_directory = Path.cwd()
         os.chdir(self.directory.name)
-        self.current = dict(zip(release.GROUPS, (image("a"), image("b"), image("c"))))
-        self.previous = dict.fromkeys(release.GROUPS, "")
+        self.current = dict(zip(release.APP_GROUPS, (image("a"), image("b"), image("c"))))
+        self.previous = dict.fromkeys(release.APP_GROUPS, "")
 
     def tearDown(self):
         os.chdir(self.old_directory)
@@ -265,6 +265,50 @@ class ReleaseStateTests(unittest.TestCase):
         self.assertEqual(result.exception.code, 0)
         compose.assert_called_once_with(["docker", "compose", "logs", "-f", "backend"])
 
+
+
+
+class EdgeReleaseTests(unittest.TestCase):
+    setUp = ReleaseStateTests.setUp
+    tearDown = ReleaseStateTests.tearDown
+    save = ReleaseStateTests.save
+    # Exercise v1-to-v2 transitions without touching successful app history.
+    def test_first_edge_commit_upgrades_v1_without_changing_apps(self):
+        self.save()
+        with patch.object(release, 'verify') as verify:
+            release.commit('PROXY_IMAGE', image('d'))
+        current, previous = release.load()
+        self.assertEqual(current, {**self.current, 'PROXY_IMAGE': image('d')})
+        self.assertEqual(previous, {**self.previous, 'PROXY_IMAGE': ''})
+        self.assertEqual(json.loads(release.STATE.read_text())['x-vstore-release']['version'], 2)
+        verify.assert_called_once_with(current)
+
+    def test_app_commit_preserves_edge_current_and_previous(self):
+        self.current['PROXY_IMAGE'] = image('d')
+        self.previous['PROXY_IMAGE'] = image('e')
+        self.save()
+        with patch.object(release, 'verify'):
+            release.commit('FRONTEND_IMAGE', image('f'))
+        self.assertEqual(release.load()[0]['PROXY_IMAGE'], image('d'))
+        self.assertEqual(release.load()[1]['PROXY_IMAGE'], image('e'))
+
+    def test_failed_first_edge_commit_keeps_v1_byte_for_byte(self):
+        before = self.save()
+        with patch.object(release, 'verify', side_effect=ValueError('wrong edge artifact')):
+            with self.assertRaises(ValueError):
+                release.commit('PROXY_IMAGE', image('d'))
+        self.assertEqual(release.STATE.read_bytes(), before)
+
+    def test_failed_edge_rollback_restores_digest_without_publishing(self):
+        self.current['PROXY_IMAGE'] = image('d')
+        self.previous['PROXY_IMAGE'] = image('e')
+        before = self.save()
+        with patch.object(release, 'candidate_compose') as compose, patch.object(release, 'check_http') as http, patch.object(release, 'recover_proxies', side_effect=[ValueError('API broken'), None]):
+            with self.assertRaises(ValueError):
+                release.rollback('PROXY_IMAGE')
+        http.assert_not_called()
+        self.assertEqual(compose.call_args.args[0], self.current)
+        self.assertEqual(release.STATE.read_bytes(), before)
 
 if __name__ == "__main__":
     unittest.main()

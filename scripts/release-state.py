@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verified application releases, persisted as an automatically loaded Compose override."""
+"""Verified application and edge releases in an automatically loaded Compose override."""
 
 import argparse
 import contextlib
@@ -15,11 +15,12 @@ import time
 import urllib.request
 
 STATE = Path("docker-compose.override.yml")
-GROUPS = {
+APP_GROUPS = {
     "BACKEND_IMAGE": ("backend", "worker"),
     "FRONTEND_IMAGE": ("frontend",),
     "ADMIN_IMAGE": ("admin",),
 }
+GROUPS = {**APP_GROUPS, "PROXY_IMAGE": ("proxy",)}
 HEALTH_URLS = {
     "BACKEND_IMAGE": "http://127.0.0.1:8080/health",
     "FRONTEND_IMAGE": "http://127.0.0.1:3000/healthz",
@@ -40,10 +41,10 @@ def docker(*args):
 
 def document(current, previous):
     return {
-        "x-vstore-release": {"version": 1, "previous": previous},
+        "x-vstore-release": {"version": 2 if "PROXY_IMAGE" in current else 1, "previous": previous},
         "services": {
             service: {"image": immutable(current[key])}
-            for key, services in GROUPS.items() for service in services
+            for key, services in GROUPS.items() if key in current for service in services
         },
     }
 
@@ -52,9 +53,11 @@ def load():
     if not STATE.exists():
         raise ValueError("No release state; run scripts/compose.sh bootstrap first")
     data = json.loads(STATE.read_text())
-    current = {key: data["services"][services[0]]["image"] for key, services in GROUPS.items()}
+    current = {key: data["services"][services[0]]["image"] for key, services in APP_GROUPS.items()}
+    if "proxy" in data["services"]:
+        current["PROXY_IMAGE"] = data["services"]["proxy"]["image"]
     previous = data["x-vstore-release"]["previous"]
-    if set(previous) != set(GROUPS):
+    if set(previous) != set(current):
         raise ValueError("Invalid previous release keys")
     for value in previous.values():
         if not isinstance(value, str):
@@ -149,31 +152,33 @@ def running_image(service, expected=None, healthy=True):
 
 
 def verify(current, healthy=True):
-    for key, services in GROUPS.items():
-        for service in services:
-            running_image(service, current[key], healthy=healthy)
+    for key, image in current.items():
+        for service in GROUPS[key]:
+            running_image(service, image, healthy=healthy)
 
 
-def bootstrap(if_missing=False):
+def bootstrap(if_missing=False, proxy_image=None):
     if STATE.exists():
         load()
         if if_missing:
             return
         raise ValueError("Release state already exists; bootstrap refuses to overwrite it")
     current = {}
-    for key, services in GROUPS.items():
+    for key, services in APP_GROUPS.items():
         current[key] = running_image(services[0])
         for service in services[1:]:
             running_image(service, current[key])
-    save(current, dict.fromkeys(GROUPS, ""))
+    if proxy_image:
+        current["PROXY_IMAGE"] = running_image("proxy", immutable(proxy_image))
+    save(current, dict.fromkeys(current, ""))
 
 
 def commit(key, image):
     current, previous = load()
     candidate = {**current, key: immutable(image)}
     verify(candidate)
-    if image != current[key]:
-        previous[key] = current[key]
+    if image != current.get(key):
+        previous[key] = current.get(key, "")
     save(candidate, previous)
 
 
@@ -204,19 +209,21 @@ def recover_proxies():
 
 def rollback(key):
     current, previous = load()
-    if not previous[key]:
+    if not previous.get(key):
         raise ValueError("No previous successful image is recorded for this service")
     candidate = {**current, key: previous[key]}
     services = GROUPS[key]
     candidate_compose(candidate, "pull", *services)
     try:
         candidate_compose(candidate, "up", "-d", "--no-deps", "--wait", "--wait-timeout", "150", *services)
-        check_http(key)
+        if key != "PROXY_IMAGE":
+            check_http(key)
         recover_proxies()
         commit(key, candidate[key])
     except Exception:
         candidate_compose(current, "up", "-d", "--no-deps", "--wait", "--wait-timeout", "150", *services)
-        check_http(key)
+        if key != "PROXY_IMAGE":
+            check_http(key)
         recover_proxies()
         raise
 
@@ -249,6 +256,7 @@ def main():
     commands = parser.add_subparsers(dest="command", required=True)
     adoption = commands.add_parser("bootstrap")
     adoption.add_argument("--if-missing", action="store_true")
+    adoption.add_argument("--proxy-image", help="Include an already running, reviewed edge registry digest")
     commands.add_parser("env")
     commands.add_parser("verify")
     commands.add_parser("verify-images")
@@ -267,7 +275,7 @@ def main():
     )
     with contextlib.nullcontext() if read_only else locked(args.lock_fd):
         if args.command == "bootstrap":
-            bootstrap(args.if_missing)
+            bootstrap(args.if_missing, args.proxy_image)
         elif args.command == "commit":
             commit(args.key, args.image)
         elif args.command == "rollback":
