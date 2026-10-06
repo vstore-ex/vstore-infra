@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 case "${1:-}" in
-  bootstrap|verify|rollback)
+  bootstrap|verify|rollback|recover)
     exec python3 scripts/release-state.py "$@"
     ;;
   *)
