@@ -7,7 +7,7 @@ import stat
 import sys
 
 
-def secure(directory, check=False):
+def secure(directory, check=False, lock_only=False):
     # Descriptor-relative operations never follow symlinks, including snapshot
     # entries. Nonblocking opens let us reject special files without hanging.
     flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
@@ -33,10 +33,15 @@ def secure(directory, check=False):
 
     root = protect(None, os.fspath(directory), 0o700, True)
     try:
-        for name in ('.env', '.deploy.lock', 'docker-compose.override.yml'):
+        names = ('.deploy.lock',) if lock_only else ('.env', '.deploy.lock', 'docker-compose.override.yml')
+        for name in names:
             if name != '.env' and name not in os.listdir(root):
                 continue
             os.close(protect(root, name, 0o600))
+        # Another lock holder can atomically replace release state or rename and
+        # prune snapshots. Do not inspect those paths before acquiring the lock.
+        if lock_only:
+            return
         if not check:
             try:
                 os.mkdir('backups', mode=0o700, dir_fd=root)
@@ -65,9 +70,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--directory', type=Path, default=Path.cwd())
     parser.add_argument('--check', action='store_true', help='Validate without changing permissions')
+    parser.add_argument('--lock-only', action='store_true',
+                        help='Protect only the deployment directory and lock path before acquiring the lock')
     args = parser.parse_args()
-    secure(args.directory, args.check)
-    print('PASS: deployment directory, secrets and snapshots are private; app storage unchanged')
+    secure(args.directory, args.check, args.lock_only)
+    if args.lock_only:
+        print('PASS: deployment directory and lock path are private')
+    else:
+        print('PASS: deployment directory, secrets and snapshots are private; app storage unchanged')
 
 
 if __name__ == '__main__':
