@@ -70,20 +70,53 @@ def save(current, previous):
     """Replace one file containing both releases only after all verification succeeds."""
     content = json.dumps(document(current, previous), indent=2) + "\n"
     fd, name = tempfile.mkstemp(prefix=".release-state-", dir=".")
+    backup = None
+    preserve_backup = False
     try:
         with os.fdopen(fd, "w") as stream:
             stream.write(content)
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(name, STATE)
+        if STATE.exists():
+            original = STATE.read_bytes()
+            backup_fd, backup = tempfile.mkstemp(prefix=".release-state-", dir=".")
+            with os.fdopen(backup_fd, "wb") as stream:
+                stream.write(original)
+                stream.flush()
+                os.fsync(stream.fileno())
+        # Open before publication: even failure to open the directory must leave
+        # the previously successful release visible to callers handling errors.
         directory = os.open(".", os.O_RDONLY)
         try:
-            os.fsync(directory)
+            os.replace(name, STATE)
+            try:
+                os.fsync(directory)
+            except OSError:
+                # Callers restore containers when publication reports failure.
+                # Restore the visible state first so those images stay aligned.
+                try:
+                    if backup is None:
+                        STATE.unlink()
+                    else:
+                        os.replace(backup, STATE)
+                except OSError as restore_error:
+                    preserve_backup = True
+                    raise OSError(
+                        f"Release publication and state restoration failed; "
+                        f"saved previous state: {backup or 'none (initial bootstrap)'}"
+                    ) from restore_error
+                # Keep the original publication error even if the device cannot
+                # sync the restoration either. The previous file is visible.
+                with contextlib.suppress(OSError):
+                    os.fsync(directory)
+                raise
         finally:
             os.close(directory)
     finally:
         if os.path.exists(name):
             os.unlink(name)
+        if backup is not None and not preserve_backup and os.path.exists(backup):
+            os.unlink(backup)
 
 
 def running_image(service, expected=None, healthy=True):
