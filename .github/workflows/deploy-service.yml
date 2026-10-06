@@ -85,6 +85,8 @@ jobs:
             DEPLOY_PATH="${DEPLOY_PATH:-$HOME/vstore}"
             cd "$DEPLOY_PATH"
 
+            # Secure/refuse unsafe lock paths before the shell opens them.
+            python3 scripts/secure-deployment.py
             exec 200>"$DEPLOY_PATH/.deploy.lock"
             echo "==> Acquiring deployment lock..."
             flock -w 300 200 || { echo "ERROR: Timeout waiting for deployment lock!"; exit 1; }

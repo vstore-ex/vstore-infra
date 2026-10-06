@@ -2,6 +2,7 @@ import importlib.util
 import os
 from pathlib import Path
 import stat
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -85,6 +86,24 @@ class DeploymentPermissionsTests(unittest.TestCase):
         with self.assertRaises(OSError):
             permissions.secure(self.root)
         self.assertEqual(stat.S_IMODE(outside.stat().st_mode), 0o755)
+
+    def test_both_ssh_workflows_refuse_symlink_lock_before_shell_truncation(self):
+        shutil.copytree(ROOT / 'scripts', self.root / 'scripts')
+        victim = Path(self.temp.name) / 'unrelated-file'
+        victim.write_bytes(b'must-stay-unchanged')
+        (self.root / '.deploy.lock').symlink_to(victim)
+        for name in ('ci.yml', 'deploy-service.yml'):
+            with self.subTest(workflow=name):
+                workflow = (ROOT / '.github/workflows' / name).read_text()
+                script = workflow.split('          script: |\n', 1)[1]
+                prefix = script.split('            exec 200>', 1)[0]
+                prefix = '\n'.join(line[12:] for line in prefix.splitlines())
+                prefix = prefix.replace('${{ secrets.DEPLOY_PATH }}', str(self.root))
+                result = subprocess.run(['bash', '-c', prefix + '\nexec 200>.deploy.lock\necho LOCK_OPENED'],
+                                        capture_output=True, text=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertNotIn('LOCK_OPENED', result.stdout)
+                self.assertEqual(victim.read_bytes(), b'must-stay-unchanged')
 
     def test_special_file_is_rejected_without_blocking(self):
         os.mkfifo(self.root / 'backups/fifo')
