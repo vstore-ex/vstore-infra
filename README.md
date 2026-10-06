@@ -136,6 +136,7 @@ App repos call these via `uses: vstore-ex/vstore-infra/.github/workflows/<file>.
 ## 8. Production Host Layout
 
 * Deploy directory: **`~/vstore`** (SSH user's home; override with the `DEPLOY_PATH` secret) — must be a git clone of this repo; the deploy does `git fetch origin main && git reset --hard origin/main` inside it.
+* Deployment permissions: the SSH user owns the private `0700` clone, `.env`/release state/snapshots use `0600`, and backups use `0700`. Run `python3 scripts/secure-deployment.py` before adoption; both SSH workflows enforce the policy with `umask 077`. Preserve application-owned storage separately. See [private deployment permissions](https://github.com/vstore-ex/Docs/blob/main/infra/deployment-permissions.md).
 * Env file: `~/vstore/.env` — must define all fail-fast variables (see §5) plus `AZURE_STORAGE_CONNECTION_STRING` if Blob storage is used. `DATABASE_URL` must reference the compose service name (`@postgres:5432/...`), never `127.0.0.1`/`localhost`, and a database name that actually exists on the `postgres_data` volume (`POSTGRES_DB` only applies at first-volume init).
 * GHCR: the host must be authenticated (`docker login ghcr.io` with a PAT holding `read:packages`) to pull private images.
 * Docker Compose **v2 plugin** (`docker compose ...`) is required on the host; the standalone legacy `docker-compose` is not used.

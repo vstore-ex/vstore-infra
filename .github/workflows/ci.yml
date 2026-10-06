@@ -53,6 +53,12 @@ jobs:
       - name: Verify upstream recreation and HTTPS API failure gates
         run: python3 tests/smoke_upstream_recovery.py
 
+      - name: Verify private deployment permissions
+        run: python3 -m unittest discover -s tests -p 'test_deployment_permissions.py' -v
+
+      - name: Verify deployment isolation and app storage mounts
+        run: python3 tests/smoke_deployment_permissions.py
+
       - name: Verify database recovery guards
         run: python3 -m unittest discover -s tests -p 'test_database_recovery.py' -v
 
@@ -206,10 +212,13 @@ jobs:
           fingerprint: ${{ secrets.SSH_FINGERPRINT }}
           script: |
             set -euo pipefail
+            umask 077
             DEPLOY_PATH="${{ secrets.DEPLOY_PATH }}"
             DEPLOY_PATH="${DEPLOY_PATH:-$HOME/vstore}"
             cd "$DEPLOY_PATH"
 
+            # Refuse unsafe lock paths without inspecting another deploy's files.
+            python3 scripts/secure-deployment.py --lock-only
             exec 200>"$DEPLOY_PATH/.deploy.lock"
             echo "==> Acquiring deployment lock..."
             flock -w 300 200 || { echo "ERROR: Timeout waiting for deployment lock!"; exit 1; }
@@ -218,10 +227,12 @@ jobs:
             echo "==> Pre-deploy commit: ${PREV_GIT_COMMIT:-none}"
 
             echo "==> Synchronizing repository state from origin/main..."
-            git fetch origin main
-            git reset --hard origin/main
+            # Tracked Nginx mounts must stay readable without DAC_OVERRIDE.
+            # The private deployment parent protects the clone on the host.
+            (umask 022; git fetch origin main; git reset --hard origin/main)
 
             # Adopt healthy running digests once, then ignore stale .env image pins.
+            python3 scripts/secure-deployment.py
             source scripts/release-state.sh
             release_load
             # Keep the new gate available even when the previous config commit
@@ -261,7 +272,7 @@ jobs:
               docker compose logs --no-color --timestamps --tail=150 || true
               echo "ERROR: Stack failed to converge. Restoring config and edge artifact."
               if [ -n "$PREV_GIT_COMMIT" ]; then
-                git reset --hard "$PREV_GIT_COMMIT"
+                (umask 022; git reset --hard "$PREV_GIT_COMMIT")
                 proxy_override "$PREV_PROXY_IMAGE"
                 if edge_compose up -d --no-build --remove-orphans --wait --wait-timeout 150 && edge_compose up -d --no-build --no-deps --force-recreate --wait --wait-timeout 150 proxy && python3 "$PROXY_HEALTH_HELPER" recover; then
                   echo "==> Config and edge artifact rollback completed successfully."

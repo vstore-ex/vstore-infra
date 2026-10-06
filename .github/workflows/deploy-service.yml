@@ -80,14 +80,18 @@ jobs:
           envs: IMAGE,SERVICES,IMAGE_VAR,HEALTH_URL,RUN_MIGRATIONS
           script: |
             set -euo pipefail
+            umask 077
             DEPLOY_PATH="${{ secrets.DEPLOY_PATH }}"
             DEPLOY_PATH="${DEPLOY_PATH:-$HOME/vstore}"
             cd "$DEPLOY_PATH"
 
+            # Refuse unsafe lock paths without inspecting another deploy's files.
+            python3 scripts/secure-deployment.py --lock-only
             exec 200>"$DEPLOY_PATH/.deploy.lock"
             echo "==> Acquiring deployment lock..."
             flock -w 300 200 || { echo "ERROR: Timeout waiting for deployment lock!"; exit 1; }
 
+            python3 scripts/secure-deployment.py
             source scripts/release-state.sh
             release_load
             case "$IMAGE_VAR:$SERVICES" in

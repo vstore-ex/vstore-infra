@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import shutil
 import socket
+import stat
 import subprocess
 import tempfile
 import uuid
@@ -163,6 +164,7 @@ with tempfile.TemporaryDirectory(prefix="vstore-release-smoke-") as directory:
         subprocess.run(["bash", "-c", infra_script], env={**fresh, "PATH": environment["PATH"]}, check=True)
         expected(new)
         proxy_expected('updated')
+        assert template.stat().st_mode & stat.S_IROTH, 'Git sync must preserve proxy mount readability'
         assert json.loads(run("docker", "compose", "config", "--format", "json"))["services"]["frontend"]["labels"]["release-smoke-config"] == "updated"
         print("PASS: app deployment survives fresh-session manual/infra convergence")
 
@@ -248,6 +250,7 @@ with tempfile.TemporaryDirectory(prefix="vstore-release-smoke-") as directory:
         result = subprocess.run(['bash', '-c', infra_script], env={**fresh, 'PATH': environment['PATH']})
         assert result.returncode != 0
         assert run('git', 'rev-parse', 'HEAD') == legacy
+        assert template.stat().st_mode & stat.S_IROTH, 'Config rollback must preserve proxy mount readability'
         assert not gate.exists()
         assert release.STATE.read_bytes() == before
         expected(old)
