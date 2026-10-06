@@ -21,7 +21,8 @@ with tempfile.TemporaryDirectory(prefix='vstore-database-recovery-') as director
                                                                'POSTGRES_PASSWORD': 'disposable-fixture-only'},
                      'healthcheck': {'test': ['CMD', 'pg_isready', '-U', 'postgres', '-d', 'app'],
                                      'interval': '1s', 'timeout': '2s', 'retries': 30}},
-        'backend': {'image': 'postgres:17', 'entrypoint': ['sh', '-c', 'echo "[entrypoint] unrelated startup output"; exec sleep infinity']},
+        'backend': {'image': 'postgres:17', 'environment': {'DATABASE_URL': 'postgresql://postgres:disposable-fixture-only@postgres:5432/live_app'},
+                    'entrypoint': ['sh', '-c', 'echo "[entrypoint] unrelated startup output"; exec sleep infinity']},
         'worker': {'image': 'postgres:17', 'entrypoint': ['sleep', 'infinity']}}}
     (directory / 'docker-compose.yml').write_text(json.dumps(fixture))
     environment = {**os.environ, 'COMPOSE_PROJECT_NAME': project}
@@ -32,7 +33,7 @@ with tempfile.TemporaryDirectory(prefix='vstore-database-recovery-') as director
     def compose(*args, **kwargs):
         return run('docker', 'compose', *args, **kwargs)
 
-    def sql(query, database='app'):
+    def sql(query, database='live_app'):
         return compose('exec', '-T', 'postgres', 'psql', '-X', '-qAt', '-v', 'ON_ERROR_STOP=1',
                        '-U', 'postgres', '-d', database, input=query, text=True).strip()
 
@@ -46,7 +47,7 @@ with tempfile.TemporaryDirectory(prefix='vstore-database-recovery-') as director
 
     def snapshot(name, revision='a1', extra=b''):
         path = directory / (name + '.sql.gz')
-        dump = compose('exec', '-T', 'postgres', 'sh', '-c', 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"')
+        dump = compose('exec', '-T', 'postgres', 'pg_dump', '-U', 'postgres', '-d', 'live_app')
         with gzip.open(path, 'wb') as stream:
             stream.write(dump + extra)
         helper('record', path, '--revision', revision)
@@ -66,7 +67,10 @@ END $$;
 
     try:
         compose('up', '-d', '--wait', '--wait-timeout', '90')
+        sql('CREATE DATABASE live_app TEMPLATE template0;', 'postgres')
         assert sql('SHOW server_version_num;').startswith('17')
+        assert helper('source-database') == 'live_app'
+        assert helper('revision', '--database', 'app') == 'base'
         sql("CREATE TABLE recovery_probe(id integer PRIMARY KEY, value text NOT NULL);\n"
             "INSERT INTO recovery_probe VALUES (1, 'before');\n"
             "CREATE TABLE alembic_version(version_num varchar(32) PRIMARY KEY);\n"
@@ -94,8 +98,9 @@ END $$;
         good = next((directory / 'backups').glob('*.sql.gz'))
         metadata = json.loads(Path(str(good) + '.metadata.json').read_text())
         assert metadata['revision'] == 'a1' and metadata['postgres_major'] == 17
+        assert metadata['database'] == 'live_app'
         assert metadata['backend_image'] == image
-        print('PASS: actual workflow captures clean revision and verified snapshot metadata', flush=True)
+        print('PASS: actual workflow snapshots DATABASE_URL database despite a different POSTGRES_DB', flush=True)
         error = snapshot('sql-error', extra=b'\nSELECT 1/0;\n')
         sql("UPDATE recovery_probe SET value='after'; INSERT INTO recovery_probe VALUES (2,'new');\n"
             "UPDATE alembic_version SET version_num='b2';")
