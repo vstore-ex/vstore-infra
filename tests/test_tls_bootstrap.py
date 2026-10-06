@@ -111,6 +111,20 @@ else:
         self.assertEqual(self.events(), ["lock-wait", "up", "certbot"])
         self.assertNotIn("completed successfully", result.stdout)
 
+    def test_edge_digest_in_v2_state_overrides_stale_bootstrap_pin(self):
+        edge = "ghcr.io/vstore-ex/vstore-infra-proxy@sha256:" + "d" * 64
+        path = self.directory / "docker-compose.override.yml"
+        state = json.loads(path.read_text())
+        state["x-vstore-release"]["version"] = 2
+        state["x-vstore-release"]["previous"]["PROXY_IMAGE"] = ""
+        state["services"]["proxy"] = {"image": edge}
+        path.write_text(json.dumps(state))
+        with (self.directory / ".env").open("a") as stream:
+            stream.write("PROXY_IMAGE=unverified:latest\n")
+        result = self.run_bootstrap(TLS_TEST_IMAGES=json.dumps({**self.images, "PROXY_IMAGE": edge}))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.events(), ["lock-wait", "up", "certbot", "gate"])
+
     def test_failed_final_https_gate_is_not_success(self):
         result = self.run_bootstrap(TLS_TEST_GATE_FAIL="1")
         self.assertNotEqual(result.returncode, 0)

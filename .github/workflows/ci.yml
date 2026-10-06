@@ -63,9 +63,111 @@ jobs:
         run: python3 -m unittest tests/test_gateway.py -v
 
 
+  build-proxy:
+    name: Build and scan edge proxy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.publish.outputs.image }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Verify edge publication identity guards
+        run: python3 -m unittest discover -s tests -p 'test_edge_publish.py' -v
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349 # v3.7.1
+
+      - name: Extract edge metadata
+        id: meta
+        uses: docker/metadata-action@70b2cdc6480c1a8b86edf1777157f8f437de2166 # v5.5.1
+        with:
+          images: ghcr.io/${{ github.repository }}-proxy
+          tags: type=sha,format=long,prefix=sha-
+
+      - name: Build fresh edge runtime
+        uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75 # v6.9.0
+        with:
+          context: config/nginx
+          load: true
+          platforms: linux/amd64
+          provenance: false
+          pull: true
+          no-cache-filters: runtime
+          tags: local-edge:scan
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Record built artifact identity
+        id: built
+        run: echo "image_id=$(docker image inspect local-edge:scan --format '{{.Id}}')" >> "$GITHUB_OUTPUT"
+
+      - name: Verify scanned artifact bootstrap and Nginx syntax
+        env:
+          EDGE_IMAGE_ID: ${{ steps.built.outputs.image_id }}
+        run: bash tests/smoke-proxy.sh "$EDGE_IMAGE_ID"
+
+      - name: Gate fixable HIGH and CRITICAL vulnerabilities
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        with:
+          version: v0.75.0
+          image-ref: ${{ steps.built.outputs.image_id }}
+          scanners: vuln
+          format: json
+          output: proxy-trivy.json
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+
+      - name: Retain edge vulnerability report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: proxy-trivy-${{ github.sha }}
+          path: proxy-trivy.json
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Verify immutable artifact through a disposable registry
+        env:
+          EDGE_IMAGE_ID: ${{ steps.built.outputs.image_id }}
+        run: python3 tests/smoke_edge_artifact.py "$EDGE_IMAGE_ID"
+
+      - name: Log in to GHCR
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish the exact scanned artifact
+        id: publish
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+        env:
+          EDGE_IMAGE_ID: ${{ steps.built.outputs.image_id }}
+          IMAGE_TAG: ${{ steps.meta.outputs.tags }}
+          IMAGE_REPOSITORY: ghcr.io/${{ github.repository }}-proxy
+        run: |
+          set -euo pipefail
+          test "$(docker image inspect local-edge:scan --format '{{.Id}}')" = "$EDGE_IMAGE_ID"
+          docker tag "$EDGE_IMAGE_ID" "$IMAGE_TAG"
+          docker push "$IMAGE_TAG"
+          ref=$(docker image inspect "$IMAGE_TAG" --format '{{json .RepoDigests}}' | python3 -c 'import json,sys; refs=[r for r in json.load(sys.stdin) if r.startswith(sys.argv[1]+"@sha256:")]; assert len(refs)==1; print(refs[0])' "$IMAGE_REPOSITORY")
+          digest="${ref##*@}"
+          [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+          image="$IMAGE_REPOSITORY@$digest"
+          test "$(docker image inspect "$image" --format '{{.Id}}')" = "$EDGE_IMAGE_ID"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+
+
   deploy:
     name: Apply Stack Config via SSH
-    needs: [validate-compose]
+    needs: [validate-compose, build-proxy]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
@@ -93,7 +195,10 @@ jobs:
 
       - name: Sync config and apply stack via SSH
         uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17 # v1.2.0
+        env:
+          EDGE_IMAGE: ${{ needs.build-proxy.outputs.image }}
         with:
+          envs: EDGE_IMAGE
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY || secrets.SSH_PRIVATE_KEY }}
@@ -121,28 +226,47 @@ jobs:
             release_load
             # Keep the new gate available even when the previous config commit
             # predates this helper. The rollback still reads the restored Compose.
+            if ! [[ "$EDGE_IMAGE" =~ ^[a-z0-9][a-z0-9._:/-]*@sha256:[0-9a-f]{64}$ ]]; then
+              echo "ERROR: Infra deploy requires the scanned edge registry digest."
+              exit 1
+            fi
+            PREV_PROXY_IMAGE=$(release_state env | sed -n 's/^PROXY_IMAGE=//p')
+            if [ -z "$PREV_PROXY_IMAGE" ]; then
+              # First A05 rollout only: preserve the exact pre-existing local
+              # artifact for failure recovery, without rebuilding it.
+              container=$(docker compose ps -q proxy)
+              [ -n "$container" ] || { echo "ERROR: No existing edge rollback artifact."; exit 1; }
+              test "$(docker inspect --format '{{.State.Health.Status}}' "$container")" = healthy
+              PREV_PROXY_IMAGE=$(docker inspect --format '{{.Image}}' "$container")
+            fi
             PROXY_HEALTH_HELPER=$(mktemp)
+            PROXY_OVERRIDE=$(mktemp)
             cp scripts/proxy-health.py "$PROXY_HEALTH_HELPER"
-            trap 'rm -f "$PROXY_HEALTH_HELPER"' EXIT
-
-            # Recreate edge to render bind-mounted templates even when Compose
-            # sees no service-definition change.
-            if ! (release_compose build proxy && release_compose up -d --remove-orphans --wait --wait-timeout 150 && release_compose up -d --no-deps --force-recreate --wait --wait-timeout 150 proxy && python3 "$PROXY_HEALTH_HELPER" recover && release_state verify); then
+            trap 'rm -f "$PROXY_HEALTH_HELPER" "$PROXY_OVERRIDE"' EXIT
+            proxy_override() {
+              python3 - "$PROXY_OVERRIDE" "$1" <<'PYCODE'
+            import json, sys
+            with open(sys.argv[1], 'w') as stream:
+                json.dump({'services': {'proxy': {'image': sys.argv[2], 'pull_policy': 'never'}}}, stream)
+            PYCODE
+            }
+            edge_compose() {
+              docker compose -f docker-compose.yml -f "$PROXY_OVERRIDE" "$@"
+            }
+            proxy_override "$EDGE_IMAGE"
+            # Pull the published digest explicitly. Compose never builds or
+            # substitutes a tag, including when restoring legacy config.
+            if ! (docker pull "$EDGE_IMAGE" && edge_compose up -d --no-build --remove-orphans --wait --wait-timeout 150 && edge_compose up -d --no-build --no-deps --force-recreate --wait --wait-timeout 150 proxy && python3 "$PROXY_HEALTH_HELPER" recover && release_state commit PROXY_IMAGE "$EDGE_IMAGE"); then
               docker compose ps -a || true
               docker compose logs --no-color --timestamps --tail=150 || true
-              for service in backend frontend admin proxy certbot; do
-                container_id=$(docker compose ps -aq "$service" 2>/dev/null || true)
-                if [ -n "$container_id" ]; then
-                  docker inspect --format '{{.Name}} Image={{.Image}} State={{json .State}}' "$container_id" || true
-                fi
-              done
-              echo "ERROR: Stack failed to converge. Rolling back config to $PREV_GIT_COMMIT."
+              echo "ERROR: Stack failed to converge. Restoring config and edge artifact."
               if [ -n "$PREV_GIT_COMMIT" ]; then
                 git reset --hard "$PREV_GIT_COMMIT"
-                if release_compose build proxy && release_compose up -d --remove-orphans --wait --wait-timeout 150 && release_compose up -d --no-deps --force-recreate --wait --wait-timeout 150 proxy && python3 "$PROXY_HEALTH_HELPER" recover; then
-                  echo "==> Config rollback completed successfully."
+                proxy_override "$PREV_PROXY_IMAGE"
+                if edge_compose up -d --no-build --remove-orphans --wait --wait-timeout 150 && edge_compose up -d --no-build --no-deps --force-recreate --wait --wait-timeout 150 proxy && python3 "$PROXY_HEALTH_HELPER" recover; then
+                  echo "==> Config and edge artifact rollback completed successfully."
                 else
-                  echo "ERROR: Config rollback failed."
+                  echo "ERROR: Config/edge rollback failed."
                   docker compose ps -a || true
                   docker compose logs --no-color --timestamps --tail=150 || true
                 fi

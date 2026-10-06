@@ -1,11 +1,12 @@
-# Application release state
+# Application and edge release state
 
 ## State and commands
 
 The deployment directory contains a generated `docker-compose.override.yml`.
 It is JSON (valid YAML), with literal images for backend, worker, frontend and
-admin, plus previous successful images in `x-vstore-release`. Current and previous
-images are written in one atomic rename after file fsync; the directory is also
+admin, plus the edge proxy after A05 adoption, and previous successful images in
+`x-vstore-release`. Version 1 remains readable; version 2 includes `PROXY_IMAGE`.
+Current and previous images are written in one atomic rename after file fsync; the directory is also
 fsynced. Permissions are 0600. The file contains image references only, never
 environment secrets. Keep it outside Git and preserve it across config updates.
 If directory fsync fails after publication, the helper restores the previously
@@ -24,7 +25,7 @@ bash scripts/compose.sh ps
 bash scripts/compose.sh logs --tail=50 backend
 bash scripts/compose.sh verify
 bash scripts/compose.sh rollback FRONTEND_IMAGE
-# Other rollback groups: BACKEND_IMAGE (backend and worker), ADMIN_IMAGE.
+# Other rollback groups: BACKEND_IMAGE (backend and worker), ADMIN_IMAGE, PROXY_IMAGE.
 ```
 
 Plain `docker compose up` also reads the successful images automatically, including
@@ -65,16 +66,18 @@ An interruption after atomic publication retains a fully verified release.
    it reflects the intended running release, including backend/worker parity.
 4. Apply the reviewed infrastructure change first, then resume app deployments.
    Infra CD can also bootstrap automatically if the state is absent, before any
-   build/up command. Adoption fails closed if running images cannot be verified.
+   pull/up command. Adoption fails closed if running images cannot be verified.
 
 Keep the host clone compatible with the updated reusable app workflow: its helper
 scripts must be installed before that workflow runs. An old clone without helpers
 fails rather than silently deploying with stale image defaults.
 
-For a brand-new installation, configure secrets and review all three immutable
+For a brand-new installation, configure secrets and review all four immutable
 `*_IMAGE` references in `.env`, pull and start the base stack with `docker compose
-up -d --wait`, then bootstrap. The template's `:latest` values are for local
-development only. No previous target exists until the first successful upgrade.
+up -d --wait`, then bootstrap with `--proxy-image` and the reviewed edge digest.
+The edge digest must come from a successful Infra CI security gate. Template tags
+are placeholders; they are not published release pins. No previous target exists
+until the first successful upgrade.
 
 ## Recovery
 
@@ -126,10 +129,15 @@ These checks do not deploy production or validate database migrations.
 
 ## Infrastructure and certificate convergence
 
-Infrastructure CD rebuilds and recreates the edge proxy after stack convergence,
-including during config rollback. Recreation renders bind-mounted templates;
+Infrastructure CD pulls the exact scanned edge digest and recreates the proxy after
+stack convergence, including during config/artifact rollback. It never rebuilds
+on the host. Recreation renders bind-mounted templates;
 Nginx reload alone does not apply a changed template. This briefly restarts the
-edge proxy. Manual Infra CI dispatch deploys only from `main`, after validation.
+edge proxy. Manual Infra CI dispatch deploys only from `main`, after validation
+and a fresh security gate. Edge state is published only after HTTPS API and
+running-image verification. First adoption preserves the old local image ID as
+failure recovery until a successful digest is recorded. See [edge artifact policy,
+first adoption and rollback](https://github.com/vstore-ex/Docs/blob/main/infra/edge-security.md).
 
 `scripts/init-letsencrypt.sh` requires Linux `flock` and holds the shared lock for
 certificate issuance and verification. It loads the saved image digests and

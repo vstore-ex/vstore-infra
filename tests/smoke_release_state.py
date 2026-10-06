@@ -57,7 +57,13 @@ with tempfile.TemporaryDirectory(prefix="vstore-release-smoke-") as directory:
         # A01 fixture has only static HTTP servers; real TLS/API recovery is
         # exercised separately by smoke_upstream_recovery.py.
         Path("scripts/proxy-health.py").write_text(
-            "import os\nraise SystemExit(1 if os.getenv('FAIL_GATE_IMAGE') and "
+            "import os,subprocess\n"
+            "if os.getenv('FAIL_EDGE_IMAGE'):\n"
+            " c=subprocess.check_output(['docker','compose','ps','-q','proxy'],text=True).strip()\n"
+            " actual=subprocess.check_output(['docker','inspect','--format','{{.Image}}',c],text=True).strip()\n"
+            " expected=subprocess.check_output(['docker','image','inspect','--format','{{.Id}}',os.environ['FAIL_EDGE_IMAGE']],text=True).strip()\n"
+            " if actual == expected: raise SystemExit(1)\n"
+            "raise SystemExit(1 if os.getenv('FAIL_GATE_IMAGE') and "
             "os.getenv('FRONTEND_IMAGE') == os.getenv('FAIL_GATE_IMAGE') else 0)\n")
         Path(".gitignore").write_text((ROOT / ".gitignore").read_text() + "\nremote.git/\nbin/\n")
         services = {
@@ -65,7 +71,7 @@ with tempfile.TemporaryDirectory(prefix="vstore-release-smoke-") as directory:
                 "image": "${" + key + ":-" + old + "}",
                 "healthcheck": {"test": ["CMD", "wget", "-qO-", "http://127.0.0.1/"], "interval": "1s", "timeout": "2s", "retries": 10},
             }
-            for key, group in release.GROUPS.items() for service in group
+            for key, group in release.APP_GROUPS.items() for service in group
         }
         # Nginx has no inherited healthcheck. Omit the fixture's check entirely:
         # older Compose versions treat disable:true as a check during --wait.
@@ -90,8 +96,7 @@ with tempfile.TemporaryDirectory(prefix="vstore-release-smoke-") as directory:
 
         def proxy_expected(marker):
             container = run('docker', 'compose', 'ps', '-q', 'proxy')
-            environment_values = json.loads(run('docker', 'inspect', '--format', '{{json .Config.Env}}', container))
-            assert 'VSTORE_PROXY_RELEASE=' + marker in environment_values, environment_values
+            assert run('docker', 'inspect', '--format', '{{.Image}}', container) == run('docker', 'image', 'inspect', '--format', '{{.Id}}', new)
             assert run('docker', 'compose', 'exec', '-T', 'proxy', 'wget', '-qO-',
                        'http://127.0.0.1:8081/release') == marker
 
@@ -107,6 +112,8 @@ with tempfile.TemporaryDirectory(prefix="vstore-release-smoke-") as directory:
         run("git", "remote", "add", "origin", str(Path("remote.git").resolve()))
         # The remote infra commit changes config while the host stays at the old commit.
         services["frontend"]["labels"] = {"release-smoke-config": "updated"}
+        services["proxy"]["image"] = "${PROXY_IMAGE:-" + old + "}"
+        services["proxy"].pop("build")
         Path("docker-compose.yml").write_text(json.dumps({"services": services}))
         proxy_fixture('updated')
         run("git", "add", "docker-compose.yml", "config")
@@ -127,7 +134,7 @@ with tempfile.TemporaryDirectory(prefix="vstore-release-smoke-") as directory:
         docker_path = shutil.which("docker")
         Path("bin").mkdir()
         shim = Path("bin/docker")
-        shim.write_text(f'#!/usr/bin/env bash\nif [ "$1 ${{2:-}}" = "image prune" ]; then exit 0; fi\nexec "{docker_path}" "$@"\n')
+        shim.write_text(f'#!/usr/bin/env bash\nif [ "$1 ${{2:-}}" = "image prune" ]; then exit 0; fi\nif [ "$1" = "compose" ] && [[ " $* " = *" build "* ]]; then echo "Unexpected host rebuild" >&2; exit 99; fi\nexec "{docker_path}" "$@"\n')
         shim.chmod(0o755)
         if not shutil.which("flock"):
             shim = Path("bin/flock")
@@ -143,7 +150,15 @@ with tempfile.TemporaryDirectory(prefix="vstore-release-smoke-") as directory:
         assert release.load()[1]["FRONTEND_IMAGE"] == old
 
         # A fresh shell has stale .env pins and even a stale exported image.
-        fresh = {**os.environ, "FRONTEND_IMAGE": old}
+        fresh = {**os.environ, "FRONTEND_IMAGE": old, "PROXY_IMAGE": "unverified:latest", "EDGE_IMAGE": new}
+        # Reject the first edge candidate and retain the exact legacy image.
+        first_state = release.STATE.read_bytes()
+        legacy_proxy = run('docker', 'inspect', '--format', '{{.Image}}', run('docker', 'compose', 'ps', '-q', 'proxy'))
+        rejected = subprocess.run(['bash', '-c', infra_script], env={**fresh, 'PATH': environment['PATH'], 'FAIL_EDGE_IMAGE': new})
+        assert rejected.returncode != 0
+        assert release.STATE.read_bytes() == first_state
+        assert run('docker', 'inspect', '--format', '{{.Image}}', run('docker', 'compose', 'ps', '-q', 'proxy')) == legacy_proxy
+        print('PASS: first edge candidate failure restores exact legacy image and v1 state without rebuild')
         run("bash", "scripts/compose.sh", "up", "-d", "--wait", "--wait-timeout", "60", env=fresh)
         subprocess.run(["bash", "-c", infra_script], env={**fresh, "PATH": environment["PATH"]}, check=True)
         expected(new)
@@ -151,8 +166,9 @@ with tempfile.TemporaryDirectory(prefix="vstore-release-smoke-") as directory:
         assert json.loads(run("docker", "compose", "config", "--format", "json"))["services"]["frontend"]["labels"]["release-smoke-config"] == "updated"
         print("PASS: app deployment survives fresh-session manual/infra convergence")
 
-        # A template-only update must render even though Compose's service hash
-        # and the locally built image do not change.
+        assert release.load()[0]["PROXY_IMAGE"] == new
+        assert release.load()[1]["PROXY_IMAGE"] == ""
+        # A template-only update renders without changing the scanned image.
         template.write_text('server { listen 8081; location /release { return 200 "template-only"; } }\n')
         run('git', 'add', str(template))
         run('git', 'commit', '-m', 'test: change only edge template')
@@ -170,6 +186,18 @@ with tempfile.TemporaryDirectory(prefix="vstore-release-smoke-") as directory:
         expected(old)
         assert release.load()[1]["FRONTEND_IMAGE"] == new
         print("PASS: intentional rollback survives the next fresh session")
+
+        # Upgrade and intentionally roll back edge while preserving app pins.
+        subprocess.run(['bash', '-c', infra_script], env={**fresh, 'EDGE_IMAGE': old, 'PATH': environment['PATH']}, check=True)
+        assert release.load()[0]['PROXY_IMAGE'] == old
+        assert release.load()[1]['PROXY_IMAGE'] == new
+        with release.locked(None):
+            release.rollback('PROXY_IMAGE')
+        assert release.load()[0]['PROXY_IMAGE'] == new
+        assert release.load()[1]['PROXY_IMAGE'] == old
+        run('bash', 'scripts/compose.sh', 'up', '-d', '--wait', env={**fresh, 'PROXY_IMAGE': old})
+        proxy_expected('template-only')
+        print('PASS: edge digest and intentional rollback survive stale pins in fresh sessions')
 
         # An unhealthy candidate must restore the last verified release and leave
         # successful history byte-for-byte unchanged.
@@ -224,11 +252,11 @@ with tempfile.TemporaryDirectory(prefix="vstore-release-smoke-") as directory:
         assert release.STATE.read_bytes() == before
         expected(old)
         container = run('docker', 'compose', 'ps', '-q', 'proxy')
-        assert 'VSTORE_PROXY_RELEASE=updated' in json.loads(run('docker', 'inspect', '--format', '{{json .Config.Env}}', container))
+        assert run('docker', 'inspect', '--format', '{{.Image}}', container) == run('docker', 'image', 'inspect', '--format', '{{.Id}}', new)
         assert run('docker', 'compose', 'exec', '-T', 'proxy', 'wget', '-qO-',
                    'http://127.0.0.1:8081/release') == 'template-only'
         print('PASS: infra API gate rolls back config even when the legacy commit lacks the helper')
-        print('PASS: config rollback rebuilds the previous proxy image and re-renders its template')
+        print('PASS: config rollback restores the previous digest and re-renders without rebuilding')
     finally:
         # Only the unique disposable project is removed; never touch production.
         subprocess.run(["docker", "compose", "down", "--volumes", "--remove-orphans"], check=False)

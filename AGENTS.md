@@ -9,7 +9,7 @@ Conventions, constraints, and verification procedures for agents and DevOps engi
 `vstore-infra` owns:
 - **Docker Compose** orchestration (`docker-compose.yml`) — the full production stack.
 - **Shared CI/CD**: reusable workflows (`build-and-push.yml`, `deploy-service.yml`) that every app repo calls for image builds and SSH deploys.
-- **Infra CI** (`ci.yml`): compose validation + config sync to the production host.
+- **Infra CI** (`ci.yml`): Compose validation, fresh edge build/scan/publish, and config plus scanned-digest deployment to the production host.
 
 Reverse proxy (nginx) lives **inside the `frontend`/`admin` images** — edge TLS proxy configs live in `config/nginx`; application proxy configs remain in the app repos. Media routing, CSP, and proxy headers belong to those repos.
 
@@ -64,12 +64,12 @@ bash scripts/compose.sh logs -f backend  # logs without holding the deploy lock
 bash scripts/compose.sh down          # stop (add -v to wipe data — DESTRUCTIVE)
 ```
 
-Only the edge proxy builds locally from `config/nginx/Dockerfile` to provide the OpenSSL CLI. Application images come from GHCR. Build the proxy with `docker compose build proxy` before applying TLS configuration.
+All production images come from GHCR. Infra CI builds the edge from `config/nginx/Dockerfile`, refreshes the base/runtime packages, and gates fixable HIGH/CRITICAL vulnerabilities before publishing that exact image. Deploy and rollback use immutable digests without a host rebuild. See [edge security gate and adoption](https://github.com/vstore-ex/Docs/blob/main/infra/edge-security.md).
 
 ## 5. Deployment Model
 
 - App repos: `ci.yml` calls `vstore-infra/.github/workflows/build-and-push.yml@main` then `deploy-service.yml@main` (`secrets: inherit`). Digest-pinned, flock-serialized, health-gated, auto-rollback to previous digest.
-- This repo: `ci.yml` validates compose, then SSH-syncs config (`git reset --hard origin/main` + `docker compose up -d --wait`) in **`~/vstore`** on the host (override with `DEPLOY_PATH` secret) — that directory must remain a clean git clone of this repo.
+- This repo: `ci.yml` validates Compose and scans the edge, then publishes and deploys its immutable digest with config in **`~/vstore`** on the host (override with `DEPLOY_PATH` secret). The clone must remain clean. Preserve application pins; publish edge state only after HTTPS API/image verification. Failure restores config and the previous edge artifact without rebuilding.
 - Host preconditions: Docker Compose **v2 plugin**, `docker login ghcr.io` (PAT with `read:packages`), `~/vstore/.env` with all fail-fast variables (`DATABASE_URL` must use the service-name host `@postgres:5432/...` and an existing database name; `POSTGRES_DB` only applies at first-volume init), storage dir owned by UID `10001`.
 - Release tooling also requires Python 3. Adopt verified running images before rollout; infrastructure CD bootstraps a missing release state before convergence and fails if adoption cannot verify every application image. Use the manual wrapper to share `.deploy.lock`; plain Compose reads the persisted override but does not lock.
 - Requires org setting: *Actions → Allow reusable workflows from private repositories* — single dependency of the deduplicated CI; without it every cross-repo call fails at startup.
