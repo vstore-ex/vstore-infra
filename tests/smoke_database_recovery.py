@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -25,6 +26,8 @@ with tempfile.TemporaryDirectory(prefix='vstore-database-recovery-') as director
                     'entrypoint': ['sh', '-c', 'echo "[entrypoint] unrelated startup output"; exec sleep infinity']},
         'worker': {'image': 'postgres:17', 'entrypoint': ['sleep', 'infinity']}}}
     (directory / 'docker-compose.yml').write_text(json.dumps(fixture))
+    (directory / '.env').write_text('DISPOSABLE_FIXTURE_ONLY=true\n')
+    subprocess.run([sys.executable, 'scripts/secure-deployment.py'], cwd=directory, check=True)
     environment = {**os.environ, 'COMPOSE_PROJECT_NAME': project}
 
     def run(*args, **kwargs):
@@ -84,7 +87,8 @@ END $$;
         workflow = (ROOT / '.github/workflows/deploy-service.yml').read_text()
         block = workflow.split('            if [ "$RUN_MIGRATIONS" = "true" ]; then\n', 1)[1]
         block = block.split('              echo "==> Applying database migrations..."', 1)[0]
-        script = 'set -euo pipefail\nsource scripts/release-state.sh\n' + '\n'.join(line[12:] for line in block.splitlines())
+        header = workflow.split('          script: |\n', 1)[1].splitlines()[:2]
+        script = '\n'.join(line[12:] for line in header) + '\nsource scripts/release-state.sh\n' + '\n'.join(line[12:] for line in block.splitlines())
         image = json.loads(run('docker', 'image', 'inspect', '--format', '{{json .RepoDigests}}', 'postgres:17', text=True))[0]
         with open(directory / '.deploy.lock', 'a') as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
@@ -96,6 +100,9 @@ END $$;
             finally:
                 os.close(200)
         good = next((directory / 'backups').glob('*.sql.gz'))
+        assert stat.S_IMODE(good.stat().st_mode) == 0o600
+        assert stat.S_IMODE(good.parent.stat().st_mode) == 0o700
+        assert stat.S_IMODE(Path(str(good) + '.metadata.json').stat().st_mode) == 0o600
         metadata = json.loads(Path(str(good) + '.metadata.json').read_text())
         assert metadata['revision'] == 'a1' and metadata['postgres_major'] == 17
         assert metadata['database'] == 'live_app'

@@ -75,3 +75,5 @@ All production images come from GHCR. Infra CI builds the edge from `config/ngin
 - Requires org setting: *Actions → Allow reusable workflows from private repositories* — single dependency of the deduplicated CI; without it every cross-repo call fails at startup.
 
 Deployment recovery reloads dependent Nginx proxies and checks both HTTPS API routes before publishing release state. Use `bash scripts/compose.sh recover` after out-of-band recreation. See [upstream recovery](https://github.com/vstore-ex/Docs/blob/main/infra/upstream-recovery.md).
+
+Deployment paths belong to the SSH user: clone/backups `0700`, secrets and snapshots `0600`. Both SSH workflows use `umask 077` and `scripts/secure-deployment.py` under the deployment lock. Preserve app storage ownership/modes; never recursively chmod/chown the full clone. Install the helper before updated app CD. See [deployment permissions](https://github.com/vstore-ex/Docs/blob/main/infra/deployment-permissions.md).
