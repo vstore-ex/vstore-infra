@@ -101,6 +101,7 @@ with tempfile.TemporaryDirectory(prefix='vstore-offhost-drill-') as temporary:
         (source / 'storage').mkdir(mode=0o755)
         (source / 'storage/game.dat').write_bytes(b'local application bytes')
         sleeper = {'image': pg_digest, 'entrypoint': ['sh', '-c', 'exec sleep infinity'], 'init': True,
+                   'stop_signal': 'SIGTERM',
                    'healthcheck': {'test': ['CMD', 'true'], 'interval': '1s', 'timeout': '2s', 'retries': 30}}
         fixture = {'services': {
             'postgres': {'image': 'postgres:17', 'environment': {'POSTGRES_USER': 'postgres', 'POSTGRES_DB': 'app',
