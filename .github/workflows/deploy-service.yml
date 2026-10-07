@@ -149,7 +149,16 @@ jobs:
               fi
 
               echo "==> Applying database migrations..."
-              release_compose run --rm --no-deps backend alembic upgrade head
+              release_compose stop backend 2>/dev/null || true
+              if ! release_compose run --rm --no-deps backend alembic upgrade head; then
+                echo "ERROR: Database migrations failed! Halting deploy."
+                if [ -n "$PREV_IMAGE" ]; then
+                  echo "==> Restarting previous backend container..."
+                  export "$IMAGE_VAR=$PREV_IMAGE"
+                  release_compose up -d --no-deps backend || true
+                fi
+                exit 1
+              fi
             fi
 
             echo "==> Restarting $SERVICES..."
