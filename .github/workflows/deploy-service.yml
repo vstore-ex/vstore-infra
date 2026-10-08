@@ -148,8 +148,47 @@ jobs:
                 exit 1
               fi
 
+              restore_backend_after_migration_failure() {
+                local reason="$1"
+                echo "ERROR: Database migration $reason. Halting deploy."
+                if [ -n "${MIGRATION_CONTAINER:-}" ]; then
+                  docker rm -f "$MIGRATION_CONTAINER" 2>/dev/null || true
+                fi
+                local project="${COMPOSE_PROJECT_NAME:-${DEPLOY_PATH##*/}}"
+                if [ -n "$project" ]; then
+                  docker ps -qa \
+                    --filter "label=com.docker.compose.project=$project" \
+                    --filter "label=com.docker.compose.service=backend" \
+                    --filter "label=com.docker.compose.oneoff=true" | xargs -r docker rm -f 2>/dev/null || true
+                fi
+                if [ -n "$PREV_IMAGE" ]; then
+                  echo "==> Restoring previous backend container: $PREV_IMAGE"
+                  export "$IMAGE_VAR=$PREV_IMAGE"
+                  if release_compose up -d --no-deps --wait backend \
+                     && curl -fsS --retry 14 --retry-delay 3 --retry-all-errors --max-time 5 "$HEALTH_URL" > /dev/null \
+                     && python3 scripts/proxy-health.py recover; then
+                    echo "==> Previous backend successfully restored and verified healthy."
+                  else
+                    echo "CRITICAL: Automatic recovery of previous backend failed!"
+                    echo "==> Manual operator intervention required: check logs and run 'docker compose up -d backend' in $DEPLOY_PATH"
+                  fi
+                  if [ -n "${BACKUP_FILE:-}" ]; then
+                    echo "==> Snapshot created before migration attempt: $BACKUP_FILE"
+                    echo "==> Verified database recovery runbook: https://github.com/vstore-ex/Docs/blob/main/infra/database-recovery.md"
+                  fi
+                fi
+              }
+
               echo "==> Applying database migrations..."
-              release_compose run --rm --no-deps backend alembic upgrade head
+              MIGRATION_CONTAINER="vstore-migration-$(date +%s)-$RANDOM"
+              trap 'restore_backend_after_migration_failure "interrupted by signal"; exit 1' INT TERM HUP
+              release_compose stop backend 2>/dev/null || true
+              if ! release_compose run --name "$MIGRATION_CONTAINER" --rm --no-deps backend alembic upgrade head; then
+                trap - INT TERM HUP
+                restore_backend_after_migration_failure "failed"
+                exit 1
+              fi
+              trap - INT TERM HUP
             fi
 
             echo "==> Restarting $SERVICES..."
