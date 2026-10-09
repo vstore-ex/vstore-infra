@@ -92,6 +92,10 @@ jobs:
             flock -w 300 200 || { echo "ERROR: Timeout waiting for deployment lock!"; exit 1; }
 
             python3 scripts/secure-deployment.py
+            if [ -f backups/.offhost-resume.json ]; then
+              echo "ERROR: Interrupted backup requires scripts/offhost-backup.py resume before deployment."
+              exit 1
+            fi
             source scripts/release-state.sh
             release_load
             case "$IMAGE_VAR:$SERVICES" in
