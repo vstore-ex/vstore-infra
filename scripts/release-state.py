@@ -229,7 +229,7 @@ def rollback(key):
 
 
 @contextlib.contextmanager
-def locked(inherited_fd):
+def locked(inherited_fd, allow_backup_resume=False):
     with open(".deploy.lock", "a") as stream:
         if inherited_fd is None:
             deadline = time.monotonic() + 300
@@ -247,6 +247,8 @@ def locked(inherited_fd):
             if (actual.st_dev, actual.st_ino) != (inherited.st_dev, inherited.st_ino):
                 raise ValueError("Inherited deployment lock does not match this stack")
             fcntl.flock(inherited_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        if not allow_backup_resume and Path('backups/.offhost-resume.json').exists():
+            raise ValueError('Interrupted backup requires offhost-backup.py resume before deployment or recovery')
         yield inherited_fd if inherited_fd is not None else stream.fileno()
 
 

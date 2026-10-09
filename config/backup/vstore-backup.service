@@ -1,0 +1,19 @@
+[Unit]
+Description=VStore encrypted off-host recovery point (weekly when due)
+Wants=network-online.target docker.service
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+User=azureuser
+Group=azureuser
+SupplementaryGroups=docker
+WorkingDirectory=/home/azureuser/vstore
+Environment=PATH=/home/azureuser/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/azureuser/.local/share/vstore-backup/venv/bin/python /home/azureuser/vstore/scripts/offhost-backup.py --config /home/azureuser/.config/vstore-backup/config.json backup --if-due
+ExecStopPost=/home/azureuser/.local/share/vstore-backup/venv/bin/python /home/azureuser/vstore/scripts/offhost-backup.py resume
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+TimeoutStartSec=2h
+TimeoutStopSec=5min

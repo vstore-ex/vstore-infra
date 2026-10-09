@@ -1,0 +1,10 @@
+{
+  "host": "vstore-prod",
+  "repository": "azure:vstore-backups:/prod",
+  "azure_account_name": "vstorestorage",
+  "azure_sas_file": "/home/azureuser/.config/vstore-backup/repository.sas",
+  "password_file": "/home/azureuser/.config/vstore-backup/password",
+  "interval_hours": 168,
+  "keep_weekly": 4,
+  "allow_quiesce": false
+}

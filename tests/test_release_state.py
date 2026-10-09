@@ -242,6 +242,30 @@ class ReleaseStateTests(unittest.TestCase):
             with release.locked(other.fileno()):
                 pass
 
+    def test_redis_preflight_can_inherit_lock_and_backup_guard_still_applies(self):
+        for inherited in (False, True):
+            with self.subTest(inherited=inherited), open(".deploy.lock", "a") as stream:
+                fd = stream.fileno() if inherited else None
+                if inherited:
+                    release.fcntl.flock(fd, release.fcntl.LOCK_EX)
+                with release.locked(fd) as lock_fd:
+                    subprocess.run([
+                        "python3", "-c",
+                        "import fcntl,sys; fcntl.flock(int(sys.argv[1]), fcntl.LOCK_EX | fcntl.LOCK_NB)",
+                        str(lock_fd),
+                    ], pass_fds=(lock_fd,), check=True)
+                    if inherited:
+                        self.assertEqual(lock_fd, fd)
+                Path("backups").mkdir(exist_ok=True)
+                marker = Path("backups/.offhost-resume.json")
+                marker.write_text("{}")
+                try:
+                    with self.assertRaisesRegex(ValueError, "Interrupted backup"):
+                        with release.locked(fd):
+                            self.fail("Redis preflight must not bypass backup recovery")
+                finally:
+                    marker.unlink()
+
     def test_compose_keeps_lock_until_command_exits(self):
         self.save()
         process = subprocess.Popen([
