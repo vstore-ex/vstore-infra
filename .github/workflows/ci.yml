@@ -29,6 +29,23 @@ jobs:
       - name: Validate docker-compose configuration
         run: docker compose config --quiet
 
+      - name: Verify Redis policy and adoption guards
+        run: python3 -m unittest discover -s tests -p 'test_redis_policy.py' -v
+
+      - name: Verify Redis restart, crash, memory pressure and application loss semantics
+        env:
+          REDIS_POLICY_REPORT: redis-policy.json
+        run: python3 tests/smoke_redis_policy.py
+
+      - name: Retain Redis policy verification evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: redis-policy-${{ github.sha }}
+          path: redis-policy.json
+          retention-days: 7
+          if-no-files-found: warn
+
       - name: Verify proxy bootstrap without certificates
         run: bash tests/smoke-proxy.sh
 
@@ -288,8 +305,13 @@ jobs:
             fi
             PROXY_HEALTH_HELPER=$(mktemp)
             PROXY_OVERRIDE=$(mktemp)
+            REDIS_OVERRIDE=$(mktemp)
             cp scripts/proxy-health.py "$PROXY_HEALTH_HELPER"
-            trap 'rm -f "$PROXY_HEALTH_HELPER" "$PROXY_OVERRIDE"' EXIT
+            trap 'rm -f "$PROXY_HEALTH_HELPER" "$PROXY_OVERRIDE" "$REDIS_OVERRIDE"' EXIT
+            # Fail before recreation unless the live dataset has been converted.
+            # Retain the adopted Redis command even when rolling Git config back:
+            # old defaults would ignore AOF and load stale authentication state.
+            python3 scripts/redis-policy.py --lock-fd 200 prepare > "$REDIS_OVERRIDE"
             proxy_override() {
               python3 - "$PROXY_OVERRIDE" "$1" <<'PYCODE'
             import json, sys
@@ -298,7 +320,7 @@ jobs:
             PYCODE
             }
             edge_compose() {
-              docker compose -f docker-compose.yml -f "$PROXY_OVERRIDE" "$@"
+              docker compose -f docker-compose.yml -f "$REDIS_OVERRIDE" -f "$PROXY_OVERRIDE" "$@"
             }
             proxy_override "$EDGE_IMAGE"
             # Pull the published digest explicitly. Compose never builds or
@@ -312,6 +334,9 @@ jobs:
                 proxy_override "$PREV_PROXY_IMAGE"
                 if edge_compose up -d --no-build --remove-orphans --wait --wait-timeout 150 && edge_compose up -d --no-build --no-deps --force-recreate --wait --wait-timeout 150 proxy && python3 "$PROXY_HEALTH_HELPER" recover; then
                   echo "==> Config and edge artifact rollback completed successfully."
+                  if python3 -c 'import json,sys; sys.exit(0 if "redis" in json.load(open(sys.argv[1]))["services"] else 1)' "$REDIS_OVERRIDE"; then
+                    echo "==> Redis retains AOF startup flags for this rollback. Restore reviewed Redis config/helpers before further operations on a pre-A07 checkout."
+                  fi
                 else
                   echo "ERROR: Config/edge rollback failed."
                   docker compose ps -a || true

@@ -1,0 +1,44 @@
+{
+  "blacklist.py": {
+    "repository": "vstore",
+    "path": "app/core/blacklist.py",
+    "commit": "59c61caa38b439f2cf8b24f5f7d272d69ffff541",
+    "sha256": "808adec1be5eac2f2f65f56a75616721a39d899f71cc61ab03dc187bbd2794ad"
+  },
+  "refresh_token.py": {
+    "repository": "vstore",
+    "path": "app/core/refresh_token.py",
+    "commit": "59c61caa38b439f2cf8b24f5f7d272d69ffff541",
+    "sha256": "2ac93b4ddfa00b9c699e694b313eab2b18fa929a81cf011fb13e3e9e3fad3b5c"
+  },
+  "rate_limit.py": {
+    "repository": "vstore",
+    "path": "app/core/rate_limit.py",
+    "commit": "59c61caa38b439f2cf8b24f5f7d272d69ffff541",
+    "sha256": "cf38dd9dd03c3761907b2d2225257e38d48a274547a6c087cafda228aaca6bb6"
+  },
+  "cache.py": {
+    "repository": "vstore",
+    "path": "app/core/cache.py",
+    "commit": "59c61caa38b439f2cf8b24f5f7d272d69ffff541",
+    "sha256": "d5f9c48f841410b0f1dc2ca6777f21875a95bc271b0821c2f4c8a1fa6d6cbe6f"
+  },
+  "lock.py": {
+    "repository": "vstore",
+    "path": "app/core/lock.py",
+    "commit": "59c61caa38b439f2cf8b24f5f7d272d69ffff541",
+    "sha256": "12d9bd91837ded530bcb68800533bcec88d8b0c913096e4cc0ce182abde64ca9"
+  },
+  "celery_app.py": {
+    "repository": "vstore",
+    "path": "app/worker/celery_app.py",
+    "commit": "59c61caa38b439f2cf8b24f5f7d272d69ffff541",
+    "sha256": "f5b532259858688a49ab94aad50b5ef3f130605f223de47a69e29e602b2f2560"
+  },
+  "client_factory.py": {
+    "repository": "vstore",
+    "path": "app/core/redis.py",
+    "commit": "59c61caa38b439f2cf8b24f5f7d272d69ffff541",
+    "sha256": "d30bfb1ca671bb4228e81617c1e05a2bdfcc4fc7ed7dccfa6805e9ed002a14ed"
+  }
+}

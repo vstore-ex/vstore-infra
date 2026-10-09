@@ -112,6 +112,12 @@ for subnet configuration, rollout and real-Redis regression tests.
 4. **Logs**: `json-file` rotation (`10m` × `3`) via the `x-logging` anchor.
 5. **Resources**: CPU/memory limits on every service.
 
+Redis uses AOF (`everysec`) and `noeviction`, with a 64 MiB Redis memory budget
+inside its 256 MiB container limit. Existing RDB-only instances require reviewed
+live adoption before recreation. Backend/infra owners must accept the loss/error
+contract before rollout; existing blacklist/rate-limit fail-open behavior is not
+fixed by persistence. See [Redis policy, adoption and backend handoff](https://github.com/vstore-ex/Docs/blob/main/infra/redis-state.md).
+
 ## 6. Runbook
 
 ```bash
