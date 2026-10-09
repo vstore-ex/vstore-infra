@@ -49,6 +49,23 @@ services:
 
   redis:
     image: redis:7.2-alpine
+    labels:
+      vstore.redis.policy: a07-v1
+    # Convert the live dataset before recreating an existing RDB-only instance.
+    # An empty AOF would otherwise take precedence over its old RDB snapshot.
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        if [ -f /data/dump.rdb ] && [ ! -s /data/appendonlydir/appendonly.aof.manifest ] && [ ! -s /data/appendonly.aof ]; then
+          echo 'ERROR: RDB-only Redis requires reviewed live AOF adoption first.' >&2
+          exit 1
+        fi
+        exec /usr/local/bin/docker-entrypoint.sh redis-server \
+          --dir /data --appendonly yes --appendfsync everysec \
+          --no-appendfsync-on-rewrite no --aof-load-truncated no \
+          --save '' --maxmemory 64mb --maxmemory-policy noeviction \
+          --auto-aof-rewrite-percentage 100 --auto-aof-rewrite-min-size 64mb
     restart: unless-stopped
     logging: *default-logging
     deploy:

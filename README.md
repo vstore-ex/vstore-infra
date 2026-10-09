@@ -112,6 +112,12 @@ for subnet configuration, rollout and real-Redis regression tests.
 4. **Logs**: `json-file` rotation (`10m` × `3`) via the `x-logging` anchor.
 5. **Resources**: CPU/memory limits on every service.
 
+Redis uses AOF (`everysec`) and `noeviction`, with a 64 MiB Redis memory budget
+inside its 256 MiB container limit. Existing RDB-only instances require reviewed
+live adoption before recreation. Backend/infra owners must accept the loss/error
+contract before rollout; existing blacklist/rate-limit fail-open behavior is not
+fixed by persistence. See [Redis policy, adoption and backend handoff](https://github.com/vstore-ex/Docs/blob/main/infra/redis-state.md).
+
 ## 6. Runbook
 
 ```bash
@@ -168,3 +174,5 @@ See [commit message guidelines](docs/commit-messages.md) for examples and setup.
 Deployment recovery reloads dependent Nginx proxies and checks both HTTPS API routes before publishing release state. Use `bash scripts/compose.sh recover` after out-of-band recreation. See [upstream recovery](https://github.com/vstore-ex/Docs/blob/main/infra/upstream-recovery.md).
 
 Database snapshot recovery requires stopped writers, a new target and explicit data/revision verification. See [manual database recovery](https://github.com/vstore-ex/Docs/blob/main/infra/database-recovery.md). Automatic rollback remains image-only.
+
+Off-host recovery bundles use encrypted restic in a dedicated private Azure container. The optional host timer checks on boot and retries every 15 minutes; it creates a copy only when the last completed off-host recovery point is at least 168 hours old. An interrupted/partial upload cannot postpone retry. Installation, four-week retention proposal, credential escrow and isolated replacement recovery are described in [off-host backups](https://github.com/vstore-ex/Docs/blob/main/infra/offhost-backups.md). The timer is not installed or enabled by deployment; approve storage costs and the writer maintenance window before adoption.

@@ -124,7 +124,9 @@ def restore(path, target, verification):
         raise ValueError('Snapshot metadata/checksum mismatch')
     if metadata['revision'] != revisions(metadata['revision'].replace(',', '\n') if metadata['revision'] != 'base' else ''):
         raise ValueError('Invalid snapshot revision metadata')
-    if int(psql('SHOW server_version_num;')) // 10000 != metadata['postgres_major']:
+    # A replacement PostgreSQL instance may not contain DATABASE_URL's source
+    # database yet. Query the maintenance database before creating the target.
+    if int(psql('SHOW server_version_num;', 'postgres')) // 10000 != metadata['postgres_major']:
         raise ValueError('Recovery requires the recorded PostgreSQL major version')
     checks = verification.read_text().strip()
     if not checks:
