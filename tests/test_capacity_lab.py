@@ -1,5 +1,8 @@
 """Regression tests for production isolation and simultaneous memory accounting."""
 import importlib.util
+import json
+import tempfile
+from types import SimpleNamespace
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -120,17 +123,68 @@ class AccountingTests(unittest.TestCase):
             lab.validate_headroom({'service_peaks': {'backend': dict(row, kernel_peak=90)}})
 
     def test_recreation_keeps_surviving_inspect_rows(self):
-        result = CompletedProcess([], 1, '[{"Id":"surviving"}]', 'Error: No such object: removed')
-        with patch.object(lab.subprocess, 'run', return_value=result):
-            self.assertEqual([{'Id': 'surviving'}], lab.inspect_containers(['surviving','removed'], True))
-            with self.assertRaises(RuntimeError):
-                lab.inspect_containers(['surviving','removed'])
+        for message in ('Error: No such object: removed', 'error: no such object: removed'):
+            result = CompletedProcess([], 1, '[{"Id":"surviving"}]', message)
+            with self.subTest(message=message), patch.object(lab.subprocess, 'run', return_value=result):
+                self.assertEqual([{'Id': 'surviving'}], lab.inspect_containers(['surviving','removed'], True))
+                with self.assertRaises(RuntimeError):
+                    lab.inspect_containers(['surviving','removed'])
 
     def test_daemon_failure_is_not_mistaken_for_replacement(self):
         result = CompletedProcess([], 1, '[]', 'Cannot connect to the Docker daemon')
         with patch.object(lab.subprocess, 'run', return_value=result):
             with self.assertRaises(RuntimeError):
                 lab.inspect_containers(['backend'], True)
+
+
+class ProbeTests(unittest.TestCase):
+    def test_catalog_and_upload_use_created_uuid_fixtures(self):
+        spec = importlib.util.spec_from_file_location('probe', ROOT/'tests/capacity/probe.py')
+        probe = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(probe)
+        game_ids = ['00000000-0000-0000-0000-000000000001',
+                    '00000000-0000-0000-0000-000000000002']
+        requests = []
+
+        class Client:
+            def __init__(self, **kwargs):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                pass
+
+            def get(self, url):
+                requests.append(('GET', url))
+                return SimpleNamespace(status_code=200, json=lambda: [{'id': game_ids[0]}])
+
+            def post(self, url, **kwargs):
+                requests.append(('POST', url))
+                return SimpleNamespace(status_code=200, raise_for_status=lambda: None,
+                                       json=lambda: {'access_token': 'test-token'})
+
+        modules = {'httpx': SimpleNamespace(Client=Client),
+            'redis': SimpleNamespace(Redis=lambda **kw: SimpleNamespace(set=lambda *a: None)),
+            'app.core.db': SimpleNamespace(SessionLocal=None),
+            'app.models': SimpleNamespace(GameMedia=None)}
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            (output/'fixtures.json').write_text(json.dumps({'game_ids': game_ids}))
+            (output/'image.png').write_bytes(b'synthetic-image')
+            (output/'video.mp4').write_bytes(b'synthetic-video')
+            with patch.dict('sys.modules', modules), \
+                    patch.dict(probe.os.environ, {'ADMIN_PASSWORD': 'test-password'}), \
+                    patch.object(probe, 'Path', side_effect=lambda name: output/Path(name).name), \
+                    patch('builtins.print'):
+                probe.load(SimpleNamespace(seconds=.1, clients=2, uploaders=1,
+                                           interval=.001, name='uuid-check'))
+            self.assertTrue((output/'uuid-check-load.json').exists())
+        for game_id in game_ids:
+            self.assertIn(('GET', 'https://proxy/api/v1/games/'+game_id), requests)
+        self.assertIn(('POST', 'http://admin:8080/api/v1/admin/games/'+game_ids[0]+'/media'),
+                      requests)
 
 
 if __name__ == '__main__':

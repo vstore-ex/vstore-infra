@@ -162,7 +162,8 @@ For a public storefront hostname and a local admin hostname, set `ADMIN_CERT_NAM
 
 Capacity planning has an opt-in isolated laboratory for catalog/media and
 deployment overlap. See [capacity experiments](docs/capacity.md) and the
-[2026-10-07 measurements](docs/capacity-2026-10-07.md). The proposed profile is
+[2026-10-09 measurements](docs/capacity-2026-10-09.md), with
+[earlier trials](docs/capacity-2026-10-07.md). The proposed profile is
 test-only; it does not resize or change the running production stack.
 
 ## Commit messages

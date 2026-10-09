@@ -77,7 +77,9 @@ and `.capacity-cache/` are ignored by Git.
 Fixtures are synthetic: 100 catalog games, one deterministic 3840×2160 RGB PNG
 (seed 42), a five-second 1920×1080/24 fps H.264 video, and 16 MiB of Redis payload.
 Actual fixture sizes/hashes and Python dependency versions are retained. There
-is no copy of production user data.
+is no copy of production user data. Setup reuses startup-seeded administrator
+records when present and records the created game IDs; catalog and media requests
+use those IDs, including UUIDs, rather than assuming integer primary keys.
 
 1. **Idle:** ten seconds after fixture preparation.
 2. **Mixed:** catalog list/detail reads through edge HTTPS and storefront Nginx;
@@ -87,8 +89,11 @@ is no copy of production user data.
    verifies every accepted video has a completed URL and thumbnail.
 3. **Deploy:** repeat the mixed workload; after ten seconds, stream `pg_dump`
    through gzip and run `alembic upgrade head` in a separate container while the
-   current backend/worker remain live. The schema is already current, so this
-   measures migration startup/overlap, not an arbitrary expensive data migration.
+   current backend/worker remain live. This is a conservative capacity scenario:
+   the production workflow now stops the API before migration (PR #62). The lab
+   does not execute that release workflow or verify its recovery paths. The schema
+   is already current, so this measures migration startup/overlap, not an
+   arbitrary expensive data migration.
    Trigger Redis `BGSAVE` while writing 64 KiB values at ten writes/second.
 4. **Cooldown:** ten seconds after tasks drain.
 5. **Recreate:** recreate backend/worker and wait for backend health after traffic
@@ -98,6 +103,10 @@ is no copy of production user data.
 Tests assert project/state isolation, static IP separation for the migration
 container, simultaneous peak accounting and refusal of incomplete measurements.
 The expensive workload is opt-in, while these guards run in normal Infra CI.
+Redis retains the base Compose AOF/noeviction policy; the persistence report
+records AOF state as well as the explicit BGSAVE. The local Blob emulator has
+a 1,024 MiB ceiling; older 2026-10-07 runs used 256 MiB and observed emulator
+limit pressure. Compare profiles from the same harness/base configuration.
 
 ## Metrics and interpretation
 
@@ -140,13 +149,15 @@ Before adopting a profile, replay on an isolated Linux amd64 host with the exact
 reviewed production images and representative media/data sizes. Account for host
 OS/Docker, PostgreSQL growth, Redis persistence and backup overlap, and sustained
 CPU limits. Desktop ARM timings cannot certify production throughput or a VM
-size. This draft delivers the experiment tooling and observed results; the final
-768 MiB worker profile has not completed a validated run. A15 remains open.
+size. The 768 MiB worker profile completed the bounded local experiment with the
+required reserve; see the [2026-10-09 report](capacity-2026-10-09.md). This does
+not qualify a production VM size or the deployed amd64 runtime. A15 remains open.
 
 During the first overlap attempt, `compose run backend` failed with **Address
 already in use** because the base service's fixed proxy IP was held by the live
 backend. The lab now uses a migration-only copy on `app_net`; no business code or
-schema changes are required. The production reusable deployment workflow still
-runs its migration as `backend`; investigate/fix that network collision in a
-separate deployment change before the next backend release. See the dated report
-for the exact reproduction and the sizing evidence.
+schema changes are required. Production PR #62 subsequently addressed the
+collision by stopping backend before migration and adding failure recovery.
+The lab keeps its migration-only service to measure concurrent memory demand;
+these results do not certify the production release or database recovery path.
+See the dated reports for the original reproduction and measurement evidence.

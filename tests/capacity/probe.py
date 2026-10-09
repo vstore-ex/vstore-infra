@@ -21,13 +21,24 @@ def setup():
     BlobServiceClient.from_connection_string(
         os.environ['AZURE_STORAGE_CONNECTION_STRING']).create_container('media')
     with SessionLocal() as db:
-        role = Role(name='admin')
-        db.add(role)
+        # Current backend seeds its administrator during startup; reuse that fixture.
+        role = db.query(Role).filter_by(name='admin').first()
+        if role is None:
+            role = Role(name='admin')
+            db.add(role)
+            db.flush()
+        user = db.query(User).filter_by(email=os.environ['ADMIN_EMAIL']).first()
+        if user is None:
+            user = User(email=os.environ['ADMIN_EMAIL'])
+            db.add(user)
+        user.username = 'capacity'
+        user.password = get_password_hash(os.environ['ADMIN_PASSWORD'])
+        user.role_id = role.id
+        games = [Game(title=f'Capacity game {i}', description_md='Synthetic catalog ' * 256)
+                 for i in range(100)]
+        db.add_all(games)
         db.flush()
-        db.add(User(username='capacity', email='capacity@example.invalid',
-                    password=get_password_hash(os.environ['ADMIN_PASSWORD']), role_id=role.id))
-        db.add_all([Game(title=f'Capacity game {i}', description_md='Synthetic catalog ' * 256)
-                    for i in range(100)])
+        game_ids = [str(game.id) for game in games]
         db.commit()
     # Modest bounded persistence dataset, including writes during BGSAVE.
     client = redis.Redis(host='redis')
@@ -43,7 +54,8 @@ def setup():
                     '-pix_fmt', 'yuv420p', '-y', '/results/video.mp4'], check=True)
     import hashlib
     import importlib.metadata
-    fixture = {'games': 100, 'redis_payload_mib': 16, 'image_pixels': [3840, 2160],
+    fixture = {'games': 100, 'game_ids': game_ids,
+        'redis_payload_mib': 16, 'image_pixels': [3840, 2160],
         'image_seed': 42, 'video': '1080p/24fps/5s',
         'packages': {p: importlib.metadata.version(p) for p in
                      ('celery', 'fastapi', 'Pillow', 'azure-storage-blob', 'SQLAlchemy')},
@@ -60,6 +72,9 @@ def load(args):
     # Names are resolved solely on this project's network. The runner supplies no URL.
     catalog = 'https://proxy/api/v1/games/'
     admin = 'http://admin:8080/api/v1'
+    game_ids = json.loads(Path('/results/fixtures.json').read_text())['game_ids']
+    if not game_ids:
+        raise RuntimeError('no fixture game IDs; refusing an invalid workload')
     with httpx.Client(verify=False, timeout=60, trust_env=False) as client:
         response = client.post(admin + '/auth/login', data={
             'username': 'capacity', 'password': os.environ['ADMIN_PASSWORD']})
@@ -81,7 +96,8 @@ def load(args):
             while time.monotonic() < deadline:
                 began = time.monotonic()
                 try:
-                    url = catalog + (f'{index + 1}' if iteration % 2 else '?limit=20')
+                    url = catalog + (game_ids[index % len(game_ids)]
+                                     if iteration % 2 else '?limit=20')
                     response = client.get(url)
                     code = response.status_code
                     if code == 200:
@@ -103,7 +119,7 @@ def load(args):
                 began = time.monotonic()
                 try:
                     with path.open('rb') as payload:
-                        response = client.post(admin + '/admin/games/1/media', headers=headers,
+                        response = client.post(admin + f'/admin/games/{game_ids[0]}/media', headers=headers,
                                                data={'media_type': kind},
                                                files={'file': (path.name, payload,
                                                        'image/png' if kind == 'image' else 'video/mp4')})

@@ -38,7 +38,7 @@ def inspect_containers(ids, allow_missing=False):
         return []
     inspection = subprocess.run(['docker', 'inspect', *ids], text=True,
         stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    if inspection.returncode and not (allow_missing and 'No such object:' in inspection.stderr):
+    if inspection.returncode and not (allow_missing and 'no such object:' in inspection.stderr.lower()):
         raise RuntimeError('cannot inspect test containers: '+inspection.stderr)
     return json.loads(inspection.stdout)
 
@@ -132,7 +132,8 @@ def isolated_config(base, images, project, output, subnet, profile, password, ke
         'command': ['azurite-blob', '--blobHost', '0.0.0.0', '--skipApiVersionCheck',
                     '--silent', '--location', '/data'],
         'volumes': [{'type': 'volume', 'source': 'blob', 'target': '/data'}],
-        'mem_limit': '256m', 'cpus': .5}
+        # Keep the local storage emulator out of the application's memory bottleneck.
+        'mem_limit': '1024m', 'cpus': .5}
     config['services']['init-storage'] = {
         **HARDENING, 'cap_add': ['CHOWN'], 'image': images['backend']['id'],
         'platform': backend['platform'], 'user': '0:0', 'network_mode': 'none',
