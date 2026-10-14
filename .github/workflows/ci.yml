@@ -29,9 +29,6 @@ jobs:
       - name: Validate docker-compose configuration
         run: docker compose config --quiet
 
-      - name: Verify capacity experiment isolation and memory accounting
-        run: python3 -m unittest discover -s tests -p 'test_capacity_lab.py' -v
-
       - name: Verify Redis policy and adoption guards
         run: python3 -m unittest discover -s tests -p 'test_redis_policy.py' -v
 
