@@ -37,7 +37,14 @@ class IsolationTests(unittest.TestCase):
                   for name in ('backend', 'frontend', 'admin', 'proxy', 'blob')}
         return lab.isolated_config(self.base(), images, 'capacity-123456789abc',
             Path('/tmp/lab-report'), '172.29.16.0/28', {'worker_concurrency': 1,
-            'memory_mib': {'worker': 384}}, 'test-password', 'test-key')
+            'cpuset_cpus': '0,2', 'memory_mib': {'worker': 384}}, 'test-password', 'test-key')
+
+    def test_application_and_migration_share_selected_test_cpus(self):
+        config = self.config()
+        for name in (*lab.SERVICES, 'migration'):
+            self.assertEqual('0,2', config['services'][name].get('cpuset'))
+        for name in ('probe', 'blob', 'init-storage'):
+            self.assertNotIn('cpuset', config['services'][name])
 
     def test_no_live_ports_state_or_external_network(self):
         config = self.config()

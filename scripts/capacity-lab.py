@@ -66,6 +66,8 @@ def isolated_config(base, images, project, output, subnet, profile, password, ke
         service.pop('container_name', None)
         service['restart'] = 'no'
         service['pull_policy'] = 'never'
+        if profile.get('cpuset_cpus'):
+            service['cpuset'] = profile['cpuset_cpus']
         service['environment'] = {}
         if name in images:
             service['image'] = images[name]['id']
@@ -220,6 +222,7 @@ def main():
         parser.add_argument('--'+service+'-image', required=True, help='local test image reference')
     parser.add_argument('--blob-image', default='mcr.microsoft.com/azure-storage/azurite:3.35.0')
     parser.add_argument('--profile', type=Path, help='JSON limits/concurrency; otherwise baseline concurrency=2')
+    parser.add_argument('--cpuset-cpus', help='restrict application/migration containers to these host CPUs')
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--seconds', type=int, default=60)
     parser.add_argument('--clients', type=int, default=4)
@@ -232,6 +235,8 @@ def main():
     if any(output.iterdir()):
         parser.error('output directory must be empty')
     profile = json.loads(args.profile.read_text()) if args.profile else {'worker_concurrency': 2}
+    if args.cpuset_cpus:
+        profile['cpuset_cpus'] = args.cpuset_cpus
     if not 1 <= profile['worker_concurrency'] <= 4:
         parser.error('worker concurrency must be 1–4')
     if any(not 32 <= size <= 2048 for size in profile.get('memory_mib', {}).values()):
