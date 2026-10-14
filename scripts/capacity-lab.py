@@ -121,7 +121,8 @@ def isolated_config(base, images, project, output, subnet, profile, password, ke
     config['services']['migration']['command'] = ['alembic', 'upgrade', 'head']
     config['services']['probe'] = {
         **HARDENING, 'image': images['backend']['id'], 'platform': backend['platform'],
-        'entrypoint': ['python'], 'command': ['/lab/probe.py', 'setup'], 'user': '0:0',
+        'entrypoint': ['python'], 'command': ['/lab/probe.py', 'setup'],
+        'user': f'{os.getuid()}:{os.getgid()}',
         'environment': {**backend['environment'], 'PYTHONPATH': '/app'},
         'networks': ['app_net', 'proxy_net'],
         'volumes': [{'type': 'bind', 'source': str(ROOT/'tests/capacity/probe.py'),
@@ -316,7 +317,7 @@ def main():
             write_json(output/'state.json', {'phase': phase, 'containers': containers})
 
         def probe(action, *extra, detach=False):
-            return capture(compose+['run', '--no-deps', '--user', '0:0']+(['-d'] if detach else ['--rm'])+
+            return capture(compose+['run', '--no-deps']+(['-d'] if detach else ['--rm'])+
                 ['probe', '/lab/probe.py', action, *extra], env=env)
 
         def await_container(container):
@@ -333,7 +334,8 @@ def main():
             run(compose+['up', '-d', '--wait', '--wait-timeout', '120', *SERVICES], env=env)
             print(probe('setup'), flush=True)
             state('idle')
-            collector = capture(['docker', 'run', '-d', '--name', project+'-collector', '--user', '0:0',
+            collector = capture(['docker', 'run', '-d', '--name', project+'-collector',
+                '--user', f'{os.getuid()}:{os.getgid()}',
                 '--pid=host', '--cgroupns=host', '--cap-drop=ALL', '--security-opt', 'no-new-privileges',
                 '--memory', '128m', '--cpus', '.5', '--network', 'none',
                 '--mount', 'type=bind,src=/sys/fs/cgroup,dst=/host-cgroup,readonly',

@@ -65,7 +65,10 @@ credentials are absent; Blob Storage is the project-local Azurite account.
 Certbot's timer is represented by an idle shell, with no ACME requests.
 
 App hardening is preserved. A short, networkless initializer has only `CHOWN` to
-assign the two newly created application volumes to UID 10001. The collector has
+assign the two newly created application volumes to UID 10001. Probe and collector
+run with the invoking host user's UID/GID so private result directories remain
+writable on native Linux without extra capabilities or world-writable modes.
+The collector has
 no Docker socket, no network and no Linux capabilities; host PID/cgroup
 namespaces plus a read-only cgroup mount allow it to inspect only the PIDs in the
 experiment's container list. This is intended for a trusted test Docker host.

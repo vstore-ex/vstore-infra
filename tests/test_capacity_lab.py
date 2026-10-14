@@ -46,6 +46,10 @@ class IsolationTests(unittest.TestCase):
         for name in ('probe', 'blob', 'init-storage'):
             self.assertNotIn('cpuset', config['services'][name])
 
+    def test_probe_writes_results_as_the_invoking_host_user(self):
+        config = self.config()
+        self.assertEqual(f'{os.getuid()}:{os.getgid()}', config['services']['probe']['user'])
+
     def test_no_live_ports_state_or_external_network(self):
         config = self.config()
         self.assertTrue(all('ports' not in service for service in config['services'].values()))
@@ -251,6 +255,7 @@ class CapacityCLITests(unittest.TestCase):
                 elif command[:2] == ['git', 'rev-parse']:
                     result = 'test-revision'
                 elif command[:2] == ['docker', 'run']:
+                    self.assertEqual(f'{os.getuid()}:{os.getgid()}', command[command.index('--user')+1])
                     if worker_exited:
                         self.fail('collector started despite an exited worker')
                     result = 'test-collector'
