@@ -160,6 +160,11 @@ Sources: [Linux cgroup v2](https://docs.kernel.org/admin-guide/cgroup-v2.html),
 
 ## Production rollout remains separate
 
+For the diploma scope, retain the existing VM. The completed experiments are
+supporting technical evidence; resizing and further load runs are not required
+deliverables. The laboratory remains optional, and the sizing below concerns its
+tested parallel workload rather than a mandatory demonstration-host upgrade.
+
 The [2026-10-14 x86-64 report](capacity-2026-10-14.md) replays the owner-approved
 starter workload on native Linux with immutable application/edge digests from
 successful production deployment runs. It recommends 2 vCPU, 4 GiB RAM and
