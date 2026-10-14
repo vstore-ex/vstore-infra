@@ -45,7 +45,8 @@ On a larger test host, use `--cpuset-cpus` to restrict the application and migra
 containers to the target CPU count (for example `--cpuset-cpus 0,2` selects two
 physical cores on the measured ThinkPad). Check the host's CPU topology first.
 The manifest records this selection. Load generators and the storage emulator
-remain outside that application CPU set; existing per-service CPU quotas apply.
+retain unrestricted CPU affinity and may also compete for those CPUs; existing
+per-service CPU quotas apply.
 
 The baseline sets Celery concurrency to two, matching the two-vCPU production
 host observed during the experiment. CPU quotas otherwise come from the base
