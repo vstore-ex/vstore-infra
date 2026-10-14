@@ -180,10 +180,23 @@ def validate_measurements(samples, loads):
     if not samples:
         raise RuntimeError('no capacity samples captured')
     for phase in ('idle', 'mixed', 'deploy', 'cooldown', 'recreate'):
-        if sum(row['phase'] == phase for row in samples) < 3:
+        phase_samples = [row for row in samples if row['phase'] == phase]
+        if len(phase_samples) < 3:
             raise RuntimeError('insufficient samples for '+phase)
-    observed = {row['service'] for sample in samples for row in sample['containers'].values()}
-    if not set(SERVICES).issubset(observed) or 'migration' not in observed:
+        complete = 0
+        for sample in phase_samples:
+            observed = {row['service'] for row in sample['containers'].values()}
+            missing = set(SERVICES) - observed
+            # Only backend/worker may disappear during their deliberate replacement.
+            allowed_missing = {'backend', 'worker'} if phase == 'recreate' else set()
+            if missing - allowed_missing:
+                raise RuntimeError('missing '+phase+' measurements: '+', '.join(sorted(missing)))
+            complete += not missing
+        if complete < 3:
+            raise RuntimeError('insufficient complete stack samples for '+phase+
+                               ' (including backend and worker)')
+    if not any(row['service'] == 'migration' for sample in samples if sample['phase'] == 'deploy'
+               for row in sample['containers'].values()):
         raise RuntimeError('missing stack or deployment overlap measurements')
     for name, load in loads.items():
         for kind in ('catalog', 'image', 'video'):
@@ -278,11 +291,14 @@ def main():
             rows = inspect_containers(ids, allow_missing=phase == 'recreate')
             containers = []
             for row in rows:
+                service = row['Config']['Labels']['com.docker.compose.service']
+                replacing = phase == 'recreate' and service in ('backend', 'worker')
+                if service in SERVICES and row['State']['Status'] != 'running' and not replacing:
+                    raise RuntimeError('unexpected container exit: '+service)
                 pid = row['State']['Pid']
                 if not pid:
                     continue
                 name = row['Name'].lstrip('/')
-                service = row['Config']['Labels']['com.docker.compose.service']
                 if service == 'backend' and row['Config']['Cmd'][:1] == ['alembic']:
                     service = 'migration'
                 records[name] = {'service': service, 'restarts': row['RestartCount'],
@@ -327,7 +343,7 @@ def main():
                 if phase == 'deploy':
                     time.sleep(10)  # Let uploads begin before taking the deployment snapshot.
                     # Same pre-deploy snapshot + Alembic process while existing API/worker are live.
-                    run(compose+['exec', '-T', 'postgres', 'sh', '-c',
+                    run(compose+['exec', '-T', 'postgres', 'bash', '-o', 'pipefail', '-c',
                         'pg_dump -U capacity -d capacity | gzip > /tmp/capacity-snapshot.sql.gz'], env=env)
                     migration = capture(compose+['run', '-d', '--no-deps', 'migration',
                         'sh', '-c', 'alembic upgrade head && sleep 5'], env=env)
@@ -404,6 +420,9 @@ def main():
         raise RuntimeError('OOM during capacity experiment')
     if any(row['oom'] or row['restarts'] for row in records.values()):
         raise RuntimeError('unexpected container restart or OOM')
+    for row in records.values():
+        if row['service'] in SERVICES and row.get('status') != 'running':
+            raise RuntimeError('unexpected container exit: '+row['service'])
     # Baseline may expose poor margins; a proposed profile must meet its explicit reserve.
     if args.profile:
         validate_headroom(summary)

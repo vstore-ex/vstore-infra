@@ -1,6 +1,9 @@
 """Regression tests for production isolation and simultaneous memory accounting."""
 import importlib.util
+import gzip
 import json
+import os
+import subprocess
 import tempfile
 from types import SimpleNamespace
 import unittest
@@ -85,6 +88,61 @@ class IsolationTests(unittest.TestCase):
 
 
 class AccountingTests(unittest.TestCase):
+    def measurements(self):
+        samples = []
+        for phase in ('idle', 'mixed', 'deploy', 'cooldown', 'recreate'):
+            for _ in range(3):
+                sample = self.sample(100, 20, phase)
+                for name in lab.SERVICES:
+                    sample['containers'].setdefault(name,
+                        dict(sample['containers']['backend'], service=name))
+                if phase == 'deploy':
+                    sample['containers']['migration'] = dict(
+                        sample['containers']['backend'], service='migration')
+                samples.append(sample)
+        load = {kind: {'requests': 1, 'codes': {'200': 1}}
+                for kind in ('catalog', 'image', 'video')}
+        load.update(videos_completed=1, videos_pending=0)
+        return samples, {'mixed': load, 'deploy': load}
+
+    def test_worker_seen_only_at_idle_cannot_qualify_loaded_measurements(self):
+        samples, loads = self.measurements()
+        for sample in samples:
+            if sample['phase'] != 'idle':
+                del sample['containers']['worker']
+        with self.assertRaisesRegex(RuntimeError, 'worker'):
+            lab.validate_measurements(samples, loads)
+
+    def test_complete_phases_and_bounded_replacement_are_accepted(self):
+        samples, loads = self.measurements()
+        replacement = self.sample(100, 20, 'recreate')
+        replacement['containers'] = {name: dict(replacement['containers']['backend'], service=name)
+                                     for name in lab.SERVICES if name not in ('backend', 'worker')}
+        samples.insert(-3, replacement)
+        lab.validate_measurements(samples, loads)
+
+    def test_one_missing_worker_sample_in_loaded_phase_is_rejected(self):
+        samples, loads = self.measurements()
+        del samples[4]['containers']['worker']
+        with self.assertRaisesRegex(RuntimeError, 'mixed.*worker'):
+            lab.validate_measurements(samples, loads)
+
+    def test_replacement_requires_complete_stack_samples_afterwards(self):
+        samples, loads = self.measurements()
+        for sample in samples[-3:]:
+            del sample['containers']['worker']
+        with self.assertRaisesRegex(RuntimeError, 'recreate'):
+            lab.validate_measurements(samples, loads)
+
+    def test_migration_observed_only_outside_deploy_is_rejected(self):
+        samples, loads = self.measurements()
+        samples[0]['containers']['migration'] = dict(samples[0]['containers']['backend'], service='migration')
+        for sample in samples:
+            if sample['phase'] == 'deploy':
+                del sample['containers']['migration']
+        with self.assertRaisesRegex(RuntimeError, 'deployment overlap'):
+            lab.validate_measurements(samples, loads)
+
     def sample(self, backend, worker, phase='mixed'):
         rows = {}
         for name, memory in [('backend', backend), ('worker', worker), ('probe', 999)]:
@@ -135,6 +193,93 @@ class AccountingTests(unittest.TestCase):
         with patch.object(lab.subprocess, 'run', return_value=result):
             with self.assertRaises(RuntimeError):
                 lab.inspect_containers(['backend'], True)
+
+
+class MigrationStarted(Exception):
+    """Stop the fake Docker boundary after a successful real snapshot pipeline."""
+
+
+class CapacityCLITests(unittest.TestCase):
+    def test_cli_aborts_before_migration_when_dump_fails(self):
+        with self.assertRaises(subprocess.CalledProcessError) as failure:
+            self.run_cli_until_snapshot('#!/bin/sh\necho simulated-dump-failure >&2\nexit 7\n')
+        self.assertEqual(7, failure.exception.returncode)
+
+    def test_cli_aborts_before_migration_when_compression_fails(self):
+        with self.assertRaises(subprocess.CalledProcessError) as failure:
+            self.run_cli_until_snapshot('#!/bin/sh\necho synthetic-sql\n',
+                                       gzip_script='#!/bin/sh\ncat >/dev/null\nexit 9\n')
+        self.assertEqual(9, failure.exception.returncode)
+
+    def test_cli_reaches_migration_with_a_complete_snapshot(self):
+        with self.assertRaises(MigrationStarted) as migration:
+            self.run_cli_until_snapshot('#!/bin/sh\necho synthetic-sql\n')
+        self.assertEqual(b'synthetic-sql\n', migration.exception.args[0])
+
+    def test_cli_rejects_unexpected_worker_exit_without_oom_or_restart(self):
+        with self.assertRaisesRegex(RuntimeError, 'worker'):
+            self.run_cli_until_snapshot('#!/bin/sh\necho synthetic-sql\n', worker_exited=True)
+
+    def run_cli_until_snapshot(self, dump_script, worker_exited=False, gzip_script=None):
+        real_run = subprocess.run
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dump = root/'pg_dump'
+            dump.write_text(dump_script)
+            dump.chmod(0o700)
+            if gzip_script:
+                compressor = root/'gzip'
+                compressor.write_text(gzip_script)
+                compressor.chmod(0o700)
+            base = IsolationTests().base()
+            image = {'Id': 'sha256:test', 'Architecture': 'arm64', 'Config': {'Labels': {}}}
+
+            def docker(command, **kwargs):
+                result = ''
+                if command[:3] == ['docker', 'image', 'inspect']:
+                    result = json.dumps([image])
+                elif command[:2] == ['docker', 'info']:
+                    result = json.dumps({'CgroupVersion': '2', 'CgroupDriver': 'cgroupfs',
+                        'OperatingSystem': 'test', 'Architecture': 'arm64', 'NCPU': 2, 'MemTotal': 4096})
+                elif command[:2] == ['git', 'rev-parse']:
+                    result = 'test-revision'
+                elif command[:2] == ['docker', 'run']:
+                    if worker_exited:
+                        self.fail('collector started despite an exited worker')
+                    result = 'test-collector'
+                elif command[:2] == ['docker', 'ps'] and worker_exited:
+                    result = 'exited-worker'
+                elif command[:2] == ['docker', 'inspect'] and worker_exited:
+                    result = json.dumps([{'Id': 'exited-worker', 'Name': '/test-worker',
+                        'State': {'Pid': 0, 'Status': 'exited', 'ExitCode': 1, 'OOMKilled': False},
+                        'Config': {'Labels': {'com.docker.compose.service': 'worker'}, 'Cmd': ['celery']},
+                        'RestartCount': 0, 'Image': 'sha256:test', 'HostConfig': {'Memory': 1024}}])
+                elif command[:2] == ['docker', 'wait']:
+                    result = '0'
+                elif command[:2] == ['docker', 'compose']:
+                    if 'config' in command and '--format' in command:
+                        result = json.dumps(base)
+                    elif 'exec' in command and 'postgres' in command:
+                        shell = command[command.index('postgres')+1:]
+                        shell[-1] = shell[-1].replace('/tmp/capacity-snapshot.sql.gz', str(root/'snapshot.gz'))
+                        return real_run(shell, **{**kwargs, 'stderr': subprocess.PIPE, 'env': {**kwargs['env'],
+                            'PATH': str(root)+os.pathsep+os.environ['PATH']}})
+                    elif 'BGSAVE' in command:
+                        result = 'Background saving started'
+                    elif 'INFO' in command:
+                        result = 'rdb_bgsave_in_progress:0\nrdb_last_bgsave_status:ok'
+                    elif 'run' in command and '-d' in command and 'migration' in command:
+                        raise MigrationStarted(gzip.decompress((root/'snapshot.gz').read_bytes()))
+                    elif 'run' in command and '-d' in command:
+                        result = 'test-load'
+                return CompletedProcess(command, 0, result, '')
+
+            arguments = ['capacity-lab.py', '--output', str(root/'results')]
+            for service in ('backend', 'frontend', 'admin', 'proxy'):
+                arguments += ['--'+service+'-image', 'local:test']
+            with patch('sys.argv', arguments), patch.object(subprocess, 'run', side_effect=docker), \
+                    patch.object(lab.time, 'sleep'), patch('builtins.print'):
+                lab.main()
 
 
 class ProbeTests(unittest.TestCase):

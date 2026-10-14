@@ -89,7 +89,8 @@ use those IDs, including UUIDs, rather than assuming integer primary keys.
    verifies every accepted video has a completed URL and thumbnail.
 3. **Deploy:** repeat the mixed workload; after ten seconds, stream `pg_dump`
    through gzip and run `alembic upgrade head` in a separate container while the
-   current backend/worker remain live. This is a conservative capacity scenario:
+   current backend/worker remain live. Failure of either `pg_dump` or gzip aborts
+   the experiment before migration. This is a conservative capacity scenario:
    the production workflow now stops the API before migration (PR #62). The lab
    does not execute that release workflow or verify its recovery paths. The schema
    is already current, so this measures migration startup/overlap, not an
@@ -133,7 +134,11 @@ of stall time; occupied swap is not by itself evidence of ongoing swapping.
 
 Reports include `manifest.json`, `fixtures.json`, `containers.json`, phase load
 results, raw samples and `summary.json`. Success requires all phases and actual
-video completion, with no unexpected restart/OOM. Proposed profiles also require
+video completion, with no unexpected service exit/restart/OOM. Every sample in
+idle, mixed, deploy and cooldown must cover the complete application stack;
+migration must be measured during deploy. During recreation only backend/worker
+may temporarily be missing, and at least three complete stack samples are still
+required. Proposed profiles also require
 at least 15% margin below each application's cgroup kernel peak and no limit
 enforcement events. Baselines expose these margins without enforcing them.
 Request counts and p95 latency
