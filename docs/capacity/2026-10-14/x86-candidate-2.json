@@ -1,0 +1,757 @@
+{
+  "manifest": {
+    "project": "capacity-85ca1a675ca3",
+    "images": {
+      "backend": {
+        "id": "sha256:3d6fd645decb187728b395c3d9e306d2da06fa84bdd53200df1a9c1533dece04",
+        "architecture": "amd64",
+        "revision": "51143df952b47a8a6ac73b918e62f1a9f0e95717"
+      },
+      "frontend": {
+        "id": "sha256:c2b4da3070109f2ea8f95a78dfe1b676be3ab7db48ca1f9d1d3bb025e4eaeeaf",
+        "architecture": "amd64",
+        "revision": "da04af8edad197bba01b1b398395ba63ea3979c3"
+      },
+      "admin": {
+        "id": "sha256:2f4469f024f1fab3e4b15ea251b77d7003c761ddc7f4155f108b407cdd286de1",
+        "architecture": "amd64",
+        "revision": "0aa0d08d382b3d7203e805ed9bc8e93fc5db1cb1"
+      },
+      "proxy": {
+        "id": "sha256:8bab7b2d19bddb19b05e4c30ab3ea404133b2056da7368211b382ce40f1533e9",
+        "architecture": "amd64",
+        "revision": "069cc8bc481ec5ce773a9224f80eb17e3385b761"
+      },
+      "blob": {
+        "id": "sha256:647c63a91102a9d8e8000aab803436e1fc85fbb285e7ce830a82ee5d6661cf37",
+        "architecture": "amd64",
+        "revision": null
+      }
+    },
+    "profile": {
+      "worker_concurrency": 1,
+      "memory_mib": {
+        "backend": 1536,
+        "worker": 768,
+        "postgres": 256,
+        "redis": 256,
+        "frontend": 64,
+        "admin": 128,
+        "proxy": 64,
+        "certbot": 128
+      },
+      "cpuset_cpus": "0,2"
+    },
+    "infra_revision": "652870998392d72467fb795be3816eafdcdc6a8c",
+    "harness_sha256": {
+      "scripts/capacity-lab.py": "345bb2993a8947a6886286507e27d8e644ef0cff86cbf60a4b09639b4a2877a5",
+      "tests/capacity/probe.py": "41998101b35b2fb4515e819c23596581eef19142bcdb5d4a62dd6ac613378de4"
+    },
+    "host": {
+      "OperatingSystem": "Arch Linux",
+      "Architecture": "x86_64",
+      "NCPU": 16,
+      "MemTotal": 14349000704
+    },
+    "workload": {
+      "seconds_per_phase": 180,
+      "readers": 4,
+      "uploaders": 2,
+      "reader_interval_seconds": 0.2
+    }
+  },
+  "fixtures": {
+    "games": 100,
+    "game_ids": [
+      "7dd2e2ad-02b0-43d7-8ad2-3a223597be07",
+      "2478a3b0-e5fe-47dd-ae3e-dbf7b02beffe",
+      "fc5263f6-718a-4c79-a0c7-bd6722b600de",
+      "5aa5ea71-dcb7-4727-bb66-57639cdf1ea5",
+      "9f8808bc-6e72-47c2-a244-0c2751ee3ccf",
+      "e55e299e-e982-49ad-a409-33add1b9c5f7",
+      "1e460d56-85f2-49f6-bdf1-b91e00e43691",
+      "3fc79eb0-1c64-4976-a0d8-9de775d73690",
+      "e35640e7-3c1f-4dec-ac95-380558e41e7d",
+      "9eabeef8-212d-4a73-be12-2310d941dc3b",
+      "fde580df-914b-4685-b8db-e41649a3d4af",
+      "75b94be8-d20c-4f5c-a110-85b746e9912e",
+      "96c2689c-4d40-4a4b-b417-76d747b07f40",
+      "81f5b9e0-8159-4573-a4c1-f124a26a2031",
+      "10bfccc2-cfb0-4ce4-958c-80627c754b58",
+      "d137b6bf-5dba-40d9-bc00-2f81d414287e",
+      "378077c6-2934-4892-a9ad-d81deb96a87c",
+      "960e0873-6ca2-4b4e-8bbb-1593775d6e8a",
+      "4e4f342d-15fb-479c-b3c7-436100ee1f08",
+      "ad9a4922-8e71-4f5a-babb-0f48069d3d48",
+      "1cda2d8c-301b-4e99-afbd-b888a9806ca2",
+      "4e28cda7-8287-4021-b8a6-9868a43b609a",
+      "67c7a83c-b587-4add-8a10-69b673367593",
+      "9e02ae77-197c-43f7-acab-f66f279e7082",
+      "92e94b19-de00-4cd5-b20e-cbf7a4cac215",
+      "7e4d2b37-2aeb-4321-bcac-e4f45e9cf17b",
+      "a0f367a8-39b5-4417-a1f6-949b247058b0",
+      "80736752-8924-4f29-83d7-347a9e5f21dd",
+      "3288d3bf-2c24-47c5-9834-16b78e8e659e",
+      "3f2e0372-1e34-4c23-95a3-819ed7f4336a",
+      "0c73f540-6e99-49c0-9779-ebe7bdad2a7c",
+      "904567c4-5a42-4ed6-a5ee-43aa163a1ad0",
+      "8feaede9-77bd-485e-aaae-ac588ad1231c",
+      "dde4b27b-16bd-41d3-99d1-85224f8dac42",
+      "92051d68-61a7-4e38-a176-e30c68ba747f",
+      "ef2596b8-55ae-4f42-897a-e7669580fdef",
+      "eb8f571c-e23e-4a2f-91c8-a48439a102ef",
+      "ca2e2dd8-316b-43be-aee1-10cef5ff0719",
+      "d2422aa5-732a-4458-b929-9c05066dee14",
+      "ba58b930-300d-43ba-b1e5-a7d2b8ae1242",
+      "034cf369-5723-4857-afd2-17a869a33ab8",
+      "8623bfc5-dda2-4fa0-8f9c-3870ba938f5f",
+      "16876f8d-e7b2-48b9-9b29-006fb8b6490e",
+      "8f871870-6d9e-4ec0-87a0-9211c828332f",
+      "a7c82e46-7e13-4939-a8e3-651490cf3791",
+      "b8bb27b1-38b8-4767-95bf-e82d36332c76",
+      "48c83306-8594-478b-8ce6-89835dd236f7",
+      "b8043522-617c-4302-8c4d-197387f66522",
+      "379e3a50-aa3c-4cf1-9c48-01a4a6816b41",
+      "6848c7d1-3a66-4443-a6c6-a648e6546c3b",
+      "024e0a2a-b375-4b40-8e1b-ce30a42b54d0",
+      "85910ac0-a132-4755-8dcd-0e74089df2c7",
+      "3380efe7-fe22-49a9-81f3-f56b3d057f3b",
+      "68403f53-53f6-4f98-b7ed-cbdf4df8d2c3",
+      "e2627a3d-d54a-4641-bf0d-7b47bb8c66dd",
+      "11b191cc-7238-4430-baa5-9ce5f445bd3e",
+      "9d62db36-e6d2-4a80-ac6f-1339f0f6751b",
+      "d4116228-f59f-4fc2-84bc-e6644b2df861",
+      "4059078a-0417-4162-a69b-1a39b128b5ae",
+      "800dbc1f-563a-4e9e-a7fe-61c3b44f2ef3",
+      "9a776765-2a5f-47de-a0dc-c5488b4cd100",
+      "4afc891a-b317-454d-bd1f-7b9a278a5f00",
+      "135e3e89-0a1d-417f-ad7d-c7928746831c",
+      "724ad5dc-3ddf-463a-886b-c35321cf8fa4",
+      "fd84d081-7b5e-4cae-b4d2-cf12333bcc73",
+      "0762447a-f280-4249-a915-b30e325dc297",
+      "f5f69ab5-1de5-4336-a9dd-2dad8f2854f3",
+      "115a0807-f948-45d5-857f-618434934152",
+      "4e27da9f-b848-4b31-bf62-825f15c26286",
+      "90742c8a-d6c5-4212-8597-deb6c002e66e",
+      "bdafce0d-d903-466d-9cdf-e3e2e5b95304",
+      "3ae21805-ae84-482c-a34a-b3210daf7f90",
+      "5a668c1e-1d4f-4f79-9812-9d86fc69bafe",
+      "c56e62ac-2c96-47c4-a3d9-37c8ee29363c",
+      "ec8cfb13-276c-4669-b4f2-8b0a84b1c820",
+      "67770204-bfd2-4e99-a13e-e0d0cc4fdd9c",
+      "a1fcc9d6-8109-467c-a02f-22bb1df124ea",
+      "dceb0042-bd69-4a70-af75-dbd78e381a2f",
+      "d588e596-cfbe-4d35-840e-37c990e245bd",
+      "c6cbe832-f656-4b98-9f6f-7926335f5237",
+      "5c0882b9-bcef-4c2f-bcff-d54189614cf5",
+      "41b0ddcc-c199-47f1-b874-ad66c32a51f9",
+      "76b93274-d953-418d-bfc8-24081894f01f",
+      "01e90465-deda-482a-a766-9339ce6643fe",
+      "76aa5348-300a-4629-97c0-841cca9b89a5",
+      "c2c72a73-8363-42b1-8abe-3667091bd820",
+      "eac5b1c2-2a56-40db-9e74-4972f54ea729",
+      "b3280180-7c1f-457a-a055-acdbd60981fb",
+      "af2b49cf-dbfd-486c-afdf-08c55f0ec708",
+      "e3712e7a-e681-4530-9885-22e2a93b3374",
+      "cac4c1ce-6761-49cc-ba7a-4d7d70fbb525",
+      "8e150714-b0f4-4100-baf8-ef87080fc055",
+      "3727eef8-59e8-496e-9679-e894036b74f6",
+      "8788819e-3dc8-4cf9-9c54-e4f36ed133e4",
+      "fb23ba9e-7245-4ebd-864a-9d5102509a76",
+      "3d61d06a-5ff8-42db-9d9b-f2387b034768",
+      "66ba097f-5813-48e2-a2bc-91a72d1de7fe",
+      "40b190dc-19bd-4dd0-91d5-fa8d5cf02825",
+      "170f310a-9212-4167-a062-bd3b3d365d23",
+      "11adec4b-7073-4d53-b38e-c3fb1206c4e0"
+    ],
+    "redis_payload_mib": 16,
+    "image_pixels": [
+      3840,
+      2160
+    ],
+    "image_seed": 42,
+    "video": "1080p/24fps/5s",
+    "packages": {
+      "celery": "5.6.3",
+      "fastapi": "0.139.2",
+      "Pillow": "12.3.0",
+      "azure-storage-blob": "12.30.2",
+      "SQLAlchemy": "2.0.51"
+    },
+    "fixtures": {
+      "image.png": {
+        "bytes": 21185623,
+        "sha256": "aec3ebe6e3fbd7409242d935b889baaccf95b4e8e611f0667cb130d6717927b9"
+      },
+      "video.mp4": {
+        "bytes": 8083248,
+        "sha256": "a5facc1f266d083490958b822b9bd69ebe70146f76c73df25f8675782cc47549"
+      }
+    }
+  },
+  "summary": {
+    "phases": {
+      "idle": {
+        "samples": 19,
+        "stack_working_set_peak": 314671104,
+        "stack_anon_peak": 277848064,
+        "stack_current_peak": 364871680,
+        "host_available_min": 10344873984,
+        "host_swap_peak": 1139957760,
+        "host_psi_some_total_start": 8431443.0,
+        "host_psi_full_total_start": 8338292.0,
+        "host_psi_some_delta_us": 0.0,
+        "host_psi_full_delta_us": 0.0
+      },
+      "mixed": {
+        "samples": 371,
+        "stack_working_set_peak": 1307746304,
+        "stack_anon_peak": 1256976384,
+        "stack_current_peak": 1431425024,
+        "host_available_min": 9300361216,
+        "host_swap_peak": 1139949568,
+        "host_psi_some_total_start": 8431443.0,
+        "host_psi_full_total_start": 8338292.0,
+        "host_psi_some_delta_us": 0.0,
+        "host_psi_full_delta_us": 0.0
+      },
+      "deploy": {
+        "samples": 362,
+        "stack_working_set_peak": 1384402944,
+        "stack_anon_peak": 1328664576,
+        "stack_current_peak": 1520029696,
+        "host_available_min": 9195360256,
+        "host_swap_peak": 1139912704,
+        "host_psi_some_total_start": 8431443.0,
+        "host_psi_full_total_start": 8338292.0,
+        "host_psi_some_delta_us": 9849.0,
+        "host_psi_full_delta_us": 9808.0
+      },
+      "cooldown": {
+        "samples": 20,
+        "stack_working_set_peak": 1315700736,
+        "stack_anon_peak": 1265545216,
+        "stack_current_peak": 1366614016,
+        "host_available_min": 9334960128,
+        "host_swap_peak": 1139892224,
+        "host_psi_some_total_start": 8441308.0,
+        "host_psi_full_total_start": 8348110.0,
+        "host_psi_some_delta_us": 0.0,
+        "host_psi_full_delta_us": 0.0
+      },
+      "recreate": {
+        "samples": 40,
+        "stack_working_set_peak": 1301684224,
+        "stack_anon_peak": 1254191104,
+        "stack_current_peak": 1352593408,
+        "host_available_min": 9350057984,
+        "host_swap_peak": 1139888128,
+        "host_psi_some_total_start": 8441308.0,
+        "host_psi_full_total_start": 8348110.0,
+        "host_psi_some_delta_us": 22.0,
+        "host_psi_full_delta_us": 18.0
+      }
+    },
+    "service_peaks": {
+      "proxy": {
+        "current": 13824000,
+        "working_set": 13750272,
+        "anon": 11059200,
+        "rss_sum": 37470208,
+        "swap": 0,
+        "kernel_peak": 16433152,
+        "oom": 0,
+        "oom_kill": 0,
+        "max": 0,
+        "limit": 67108864
+      },
+      "frontend": {
+        "current": 11223040,
+        "working_set": 11202560,
+        "anon": 9748480,
+        "rss_sum": 27602944,
+        "swap": 0,
+        "kernel_peak": 13524992,
+        "oom": 0,
+        "oom_kill": 0,
+        "max": 0,
+        "limit": 67108864
+      },
+      "admin": {
+        "current": 55087104,
+        "working_set": 15306752,
+        "anon": 9723904,
+        "rss_sum": 27357184,
+        "swap": 0,
+        "kernel_peak": 57651200,
+        "oom": 0,
+        "oom_kill": 0,
+        "max": 0,
+        "limit": 134217728
+      },
+      "backend": {
+        "current": 1143091200,
+        "working_set": 1100693504,
+        "anon": 1093128192,
+        "rss_sum": 1140301824,
+        "swap": 0,
+        "kernel_peak": 1145782272,
+        "oom": 0,
+        "oom_kill": 0,
+        "max": 0,
+        "limit": 1610612736
+      },
+      "certbot": {
+        "current": 434176,
+        "working_set": 417792,
+        "anon": 49152,
+        "rss_sum": 929792,
+        "swap": 0,
+        "kernel_peak": 8314880,
+        "oom": 0,
+        "oom_kill": 0,
+        "max": 0,
+        "limit": 134217728
+      },
+      "worker": {
+        "current": 212652032,
+        "working_set": 212590592,
+        "anon": 205959168,
+        "rss_sum": 433270784,
+        "swap": 0,
+        "kernel_peak": 222760960,
+        "oom": 0,
+        "oom_kill": 0,
+        "max": 0,
+        "limit": 805306368
+      },
+      "postgres": {
+        "current": 108097536,
+        "working_set": 57417728,
+        "anon": 25300992,
+        "rss_sum": 237187072,
+        "swap": 0,
+        "kernel_peak": 109387776,
+        "oom": 0,
+        "oom_kill": 0,
+        "max": 0,
+        "limit": 268435456
+      },
+      "redis": {
+        "current": 37519360,
+        "working_set": 37228544,
+        "anon": 34734080,
+        "rss_sum": 62296064,
+        "swap": 0,
+        "kernel_peak": 45551616,
+        "oom": 0,
+        "oom_kill": 0,
+        "max": 0,
+        "limit": 268435456
+      },
+      "blob": {
+        "current": 1073741824,
+        "working_set": 94281728,
+        "anon": 61018112,
+        "rss_sum": 137732096,
+        "swap": 0,
+        "kernel_peak": 1073844224,
+        "oom": 0,
+        "oom_kill": 0,
+        "max": 1309
+      },
+      "migration": {
+        "current": 60370944,
+        "working_set": 60366848,
+        "anon": 57802752,
+        "rss_sum": 84500480,
+        "swap": 0,
+        "kernel_peak": 60977152,
+        "oom": 0,
+        "oom_kill": 0,
+        "max": 0,
+        "limit": 1610612736
+      },
+      "probe": {
+        "current": 72609792,
+        "working_set": 72605696,
+        "anon": 69697536,
+        "rss_sum": 95326208,
+        "swap": 0,
+        "kernel_peak": 72609792,
+        "oom": 0,
+        "oom_kill": 0,
+        "max": 0
+      }
+    }
+  },
+  "run": "x86-candidate-2",
+  "measurement_coverage": "pass",
+  "headroom_guard": "pass",
+  "loads": {
+    "mixed": {
+      "catalog": {
+        "requests": 3221,
+        "codes": {
+          "200": 3221
+        },
+        "p95_seconds": 0.05136016200049198
+      },
+      "image": {
+        "requests": 54,
+        "codes": {
+          "200": 54
+        },
+        "p95_seconds": 5.645883105000394
+      },
+      "video": {
+        "requests": 52,
+        "codes": {
+          "200": 52
+        },
+        "p95_seconds": 0.32111040400195634
+      },
+      "videos_completed": 52,
+      "videos_pending": 0
+    },
+    "deploy": {
+      "catalog": {
+        "requests": 3140,
+        "codes": {
+          "200": 3140
+        },
+        "p95_seconds": 0.061459649998141686
+      },
+      "image": {
+        "requests": 52,
+        "codes": {
+          "200": 52
+        },
+        "p95_seconds": 5.224053801000991
+      },
+      "video": {
+        "requests": 52,
+        "codes": {
+          "200": 52
+        },
+        "p95_seconds": 0.27154443100153003
+      },
+      "videos_completed": 52,
+      "videos_pending": 0
+    }
+  },
+  "container_states": {
+    "capacity-85ca1a675ca3-proxy-1": {
+      "service": "proxy",
+      "restarts": 0,
+      "oom": false,
+      "memory_limit": 67108864,
+      "image_id": "sha256:8bab7b2d19bddb19b05e4c30ab3ea404133b2056da7368211b382ce40f1533e9",
+      "exit_code": 0,
+      "status": "running"
+    },
+    "capacity-85ca1a675ca3-frontend-1": {
+      "service": "frontend",
+      "restarts": 0,
+      "oom": false,
+      "memory_limit": 67108864,
+      "image_id": "sha256:c2b4da3070109f2ea8f95a78dfe1b676be3ab7db48ca1f9d1d3bb025e4eaeeaf",
+      "exit_code": 0,
+      "status": "running"
+    },
+    "capacity-85ca1a675ca3-admin-1": {
+      "service": "admin",
+      "restarts": 0,
+      "oom": false,
+      "memory_limit": 134217728,
+      "image_id": "sha256:2f4469f024f1fab3e4b15ea251b77d7003c761ddc7f4155f108b407cdd286de1",
+      "exit_code": 0,
+      "status": "running"
+    },
+    "capacity-85ca1a675ca3-backend-1": {
+      "service": "backend",
+      "restarts": 0,
+      "oom": false,
+      "memory_limit": 1610612736,
+      "image_id": "sha256:3d6fd645decb187728b395c3d9e306d2da06fa84bdd53200df1a9c1533dece04",
+      "exit_code": 0,
+      "status": "running"
+    },
+    "capacity-85ca1a675ca3-certbot-1": {
+      "service": "certbot",
+      "restarts": 0,
+      "oom": false,
+      "memory_limit": 134217728,
+      "image_id": "sha256:fb978b4fef92dc5c85cc0b908836714c600e717b52a3f74c93276eb63a9d0af9",
+      "exit_code": 0,
+      "status": "running"
+    },
+    "capacity-85ca1a675ca3-worker-1": {
+      "service": "worker",
+      "restarts": 0,
+      "oom": false,
+      "memory_limit": 805306368,
+      "image_id": "sha256:3d6fd645decb187728b395c3d9e306d2da06fa84bdd53200df1a9c1533dece04",
+      "exit_code": 0,
+      "status": "running"
+    },
+    "capacity-85ca1a675ca3-postgres-1": {
+      "service": "postgres",
+      "restarts": 0,
+      "oom": false,
+      "memory_limit": 268435456,
+      "image_id": "sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3",
+      "exit_code": 0,
+      "status": "running"
+    },
+    "capacity-85ca1a675ca3-redis-1": {
+      "service": "redis",
+      "restarts": 0,
+      "oom": false,
+      "memory_limit": 268435456,
+      "image_id": "sha256:29e8589c3f9ba699b5f7aa4b3c7733c58852a3626439e619aa0ee78de08c6ca0",
+      "exit_code": 0,
+      "status": "running"
+    },
+    "capacity-85ca1a675ca3-blob-1": {
+      "service": "blob",
+      "restarts": 0,
+      "oom": false,
+      "memory_limit": 1073741824,
+      "image_id": "sha256:647c63a91102a9d8e8000aab803436e1fc85fbb285e7ce830a82ee5d6661cf37",
+      "exit_code": 0,
+      "status": "running"
+    },
+    "capacity-85ca1a675ca3-migration-run-4d1b60f3f7cb": {
+      "service": "migration",
+      "restarts": 0,
+      "oom": false,
+      "memory_limit": 1610612736,
+      "image_id": "sha256:3d6fd645decb187728b395c3d9e306d2da06fa84bdd53200df1a9c1533dece04",
+      "exit_code": 0,
+      "status": "exited"
+    },
+    "capacity-85ca1a675ca3-probe-run-48f39e1ab398": {
+      "service": "probe",
+      "restarts": 0,
+      "oom": false,
+      "memory_limit": 268435456,
+      "image_id": "sha256:3d6fd645decb187728b395c3d9e306d2da06fa84bdd53200df1a9c1533dece04",
+      "exit_code": 0,
+      "status": "exited"
+    },
+    "capacity-85ca1a675ca3-probe-run-bf4730c99d5a": {
+      "service": "probe",
+      "restarts": 0,
+      "oom": false,
+      "memory_limit": 268435456,
+      "image_id": "sha256:3d6fd645decb187728b395c3d9e306d2da06fa84bdd53200df1a9c1533dece04",
+      "exit_code": 0,
+      "status": "exited"
+    }
+  },
+  "redis_persistence": {
+    "mixed": {
+      "loading": "0",
+      "async_loading": "0",
+      "current_cow_peak": "0",
+      "current_cow_size": "0",
+      "current_cow_size_age": "0",
+      "current_fork_perc": "0.00",
+      "current_save_keys_processed": "0",
+      "current_save_keys_total": "0",
+      "rdb_changes_since_last_save": "3879",
+      "rdb_bgsave_in_progress": "0",
+      "rdb_last_save_time": "1791973997",
+      "rdb_last_bgsave_status": "ok",
+      "rdb_last_bgsave_time_sec": "0",
+      "rdb_current_bgsave_time_sec": "-1",
+      "rdb_saves": "1",
+      "rdb_last_cow_size": "1105920",
+      "rdb_last_load_keys_expired": "0",
+      "rdb_last_load_keys_loaded": "0",
+      "aof_enabled": "1",
+      "aof_rewrite_in_progress": "0",
+      "aof_rewrite_scheduled": "0",
+      "aof_last_rewrite_time_sec": "0",
+      "aof_current_rewrite_time_sec": "-1",
+      "aof_last_bgrewrite_status": "ok",
+      "aof_rewrites": "2",
+      "aof_rewrites_consecutive_failures": "0",
+      "aof_last_write_status": "ok",
+      "aof_last_cow_size": "1437696",
+      "module_fork_in_progress": "0",
+      "module_fork_last_cow_size": "0",
+      "aof_current_size": "32872548",
+      "aof_base_size": "17072539",
+      "aof_pending_rewrite": "0",
+      "aof_buffer_length": "0",
+      "aof_pending_bio_fsync": "0",
+      "aof_delayed_fsync": "0"
+    },
+    "deploy": {
+      "loading": "0",
+      "async_loading": "0",
+      "current_cow_peak": "0",
+      "current_cow_size": "0",
+      "current_cow_size_age": "0",
+      "current_fork_perc": "0.00",
+      "current_save_keys_processed": "0",
+      "current_save_keys_total": "0",
+      "rdb_changes_since_last_save": "3446",
+      "rdb_bgsave_in_progress": "0",
+      "rdb_last_save_time": "1791974206",
+      "rdb_last_bgsave_status": "ok",
+      "rdb_last_bgsave_time_sec": "0",
+      "rdb_current_bgsave_time_sec": "-1",
+      "rdb_saves": "2",
+      "rdb_last_cow_size": "1458176",
+      "rdb_last_load_keys_expired": "0",
+      "rdb_last_load_keys_loaded": "0",
+      "aof_enabled": "1",
+      "aof_rewrite_in_progress": "0",
+      "aof_rewrite_scheduled": "0",
+      "aof_last_rewrite_time_sec": "1",
+      "aof_current_rewrite_time_sec": "-1",
+      "aof_last_bgrewrite_status": "ok",
+      "aof_rewrites": "4",
+      "aof_rewrites_consecutive_failures": "0",
+      "aof_last_write_status": "ok",
+      "aof_last_cow_size": "1462272",
+      "module_fork_in_progress": "0",
+      "module_fork_last_cow_size": "0",
+      "aof_current_size": "48959390",
+      "aof_base_size": "17163501",
+      "aof_pending_rewrite": "0",
+      "aof_buffer_length": "0",
+      "aof_pending_bio_fsync": "0",
+      "aof_delayed_fsync": "0"
+    }
+  },
+  "raw_samples_sha256": "eae025ef27c0b027285a0957e36e063f9e7e7cc1c931728156cae9eb22e18a5b",
+  "coverage": {
+    "idle": {
+      "samples": 19,
+      "complete_stack_samples": 19
+    },
+    "mixed": {
+      "samples": 371,
+      "complete_stack_samples": 371
+    },
+    "deploy": {
+      "samples": 362,
+      "complete_stack_samples": 362
+    },
+    "cooldown": {
+      "samples": 20,
+      "complete_stack_samples": 20
+    },
+    "recreate": {
+      "samples": 40,
+      "complete_stack_samples": 32
+    }
+  },
+  "image_identities": {
+    "sha256:8bab7b2d19bddb19b05e4c30ab3ea404133b2056da7368211b382ce40f1533e9": {
+      "architecture": "amd64",
+      "repo_digests": [
+        "ghcr.io/vstore-ex/vstore-infra-proxy@sha256:8bab7b2d19bddb19b05e4c30ab3ea404133b2056da7368211b382ce40f1533e9"
+      ]
+    },
+    "sha256:c2b4da3070109f2ea8f95a78dfe1b676be3ab7db48ca1f9d1d3bb025e4eaeeaf": {
+      "architecture": "amd64",
+      "repo_digests": [
+        "ghcr.io/vstore-ex/vstore-front@sha256:c2b4da3070109f2ea8f95a78dfe1b676be3ab7db48ca1f9d1d3bb025e4eaeeaf"
+      ]
+    },
+    "sha256:2f4469f024f1fab3e4b15ea251b77d7003c761ddc7f4155f108b407cdd286de1": {
+      "architecture": "amd64",
+      "repo_digests": [
+        "ghcr.io/vstore-ex/vstore-admin@sha256:2f4469f024f1fab3e4b15ea251b77d7003c761ddc7f4155f108b407cdd286de1"
+      ]
+    },
+    "sha256:3d6fd645decb187728b395c3d9e306d2da06fa84bdd53200df1a9c1533dece04": {
+      "architecture": "amd64",
+      "repo_digests": [
+        "ghcr.io/vstore-ex/vstore@sha256:3d6fd645decb187728b395c3d9e306d2da06fa84bdd53200df1a9c1533dece04"
+      ]
+    },
+    "sha256:fb978b4fef92dc5c85cc0b908836714c600e717b52a3f74c93276eb63a9d0af9": {
+      "architecture": "amd64",
+      "repo_digests": [
+        "certbot/certbot@sha256:fb978b4fef92dc5c85cc0b908836714c600e717b52a3f74c93276eb63a9d0af9"
+      ]
+    },
+    "sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3": {
+      "architecture": "amd64",
+      "repo_digests": [
+        "postgres@sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3"
+      ]
+    },
+    "sha256:29e8589c3f9ba699b5f7aa4b3c7733c58852a3626439e619aa0ee78de08c6ca0": {
+      "architecture": "amd64",
+      "repo_digests": [
+        "redis@sha256:29e8589c3f9ba699b5f7aa4b3c7733c58852a3626439e619aa0ee78de08c6ca0"
+      ]
+    },
+    "sha256:647c63a91102a9d8e8000aab803436e1fc85fbb285e7ce830a82ee5d6661cf37": {
+      "architecture": "amd64",
+      "repo_digests": [
+        "mcr.microsoft.com/azure-storage/azurite@sha256:647c63a91102a9d8e8000aab803436e1fc85fbb285e7ce830a82ee5d6661cf37"
+      ]
+    }
+  },
+  "runtime_cpu_verification": [
+    {
+      "service": "probe",
+      "cpuset": "",
+      "memory_limit": 268435456
+    },
+    {
+      "service": "proxy",
+      "cpuset": "0,2",
+      "memory_limit": 67108864
+    },
+    {
+      "service": "frontend",
+      "cpuset": "0,2",
+      "memory_limit": 67108864
+    },
+    {
+      "service": "admin",
+      "cpuset": "0,2",
+      "memory_limit": 134217728
+    },
+    {
+      "service": "backend",
+      "cpuset": "0,2",
+      "memory_limit": 1610612736
+    },
+    {
+      "service": "certbot",
+      "cpuset": "0,2",
+      "memory_limit": 134217728
+    },
+    {
+      "service": "worker",
+      "cpuset": "0,2",
+      "memory_limit": 805306368
+    },
+    {
+      "service": "postgres",
+      "cpuset": "0,2",
+      "memory_limit": 268435456
+    },
+    {
+      "service": "redis",
+      "cpuset": "0,2",
+      "memory_limit": 268435456
+    },
+    {
+      "service": "blob",
+      "cpuset": "",
+      "memory_limit": 1073741824
+    }
+  ],
+  "runner_exit_code": 0
+}

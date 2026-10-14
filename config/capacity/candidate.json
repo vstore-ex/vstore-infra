@@ -4,7 +4,7 @@
     "backend": 1536,
     "worker": 768,
     "postgres": 256,
-    "redis": 128,
+    "redis": 256,
     "frontend": 64,
     "admin": 128,
     "proxy": 64,

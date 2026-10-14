@@ -159,13 +159,15 @@ Sources: [Linux cgroup v2](https://docs.kernel.org/admin-guide/cgroup-v2.html),
 
 ## Production rollout remains separate
 
-Before adopting a profile, replay on an isolated Linux amd64 host with the exact
-reviewed production images and representative media/data sizes. Account for host
-OS/Docker, PostgreSQL growth, Redis persistence and backup overlap, and sustained
-CPU limits. Desktop ARM timings cannot certify production throughput or a VM
-size. The 768 MiB worker profile completed the bounded local experiment with the
-required reserve; see the [2026-10-09 report](capacity-2026-10-09.md). This does
-not qualify a production VM size or the deployed amd64 runtime. A15 remains open.
+The [2026-10-14 x86-64 report](capacity-2026-10-14.md) replays the owner-approved
+starter workload on native Linux with immutable application/edge digests from
+successful production deployment runs. It recommends 2 vCPU, 4 GiB RAM and
+concurrency one, accounting explicitly for OS/Docker, data growth and maintenance
+allowances. This completes the bounded A15 measurement/recommendation deliverables
+for owner review; adopting limits or resizing production remains a separate decision.
+The test did not impose a 4 GiB whole-VM limit or emulate Azure CPU credits/I/O.
+Requalify larger media/data, expensive future migrations or sustained workloads.
+The [2026-10-09 ARM report](capacity-2026-10-09.md) remains historical local evidence.
 
 During the first overlap attempt, `compose run backend` failed with **Address
 already in use** because the base service's fixed proxy IP was held by the live
