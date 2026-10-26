@@ -11,8 +11,11 @@ x-hardening: &default-hardening
     - no-new-privileges:true
 
 x-backend-env: &backend-env
+  ENVIRONMENT: production
   DATABASE_URL: ${DATABASE_URL:?set in .env}
   SECRET_KEY: ${SECRET_KEY:?set in .env}
+  ADMIN_EMAIL: ${ADMIN_EMAIL:?set in .env}
+  ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set in .env}
   AZURE_STORAGE_CONNECTION_STRING: ${AZURE_STORAGE_CONNECTION_STRING:-}
   CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
   CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
@@ -109,8 +112,6 @@ services:
           memory: 1024M
     environment:
       <<: *backend-env
-      ADMIN_EMAIL: ${ADMIN_EMAIL:?set in .env}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set in .env}
       PORT: 8080
       # Client identity is resolved once by Uvicorn, not from the leftmost raw XFF.
       TRUST_PROXY_HEADERS: "false"
