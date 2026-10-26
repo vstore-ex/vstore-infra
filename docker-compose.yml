@@ -112,6 +112,8 @@ services:
           memory: 1024M
     environment:
       <<: *backend-env
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-}
       PORT: 8080
       # Client identity is resolved once by Uvicorn, not from the leftmost raw XFF.
       TRUST_PROXY_HEADERS: "false"
