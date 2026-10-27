@@ -71,6 +71,7 @@ class InfraRevisionTests(unittest.TestCase):
         workflow = (ROOT / '.github/workflows/ci.yml').read_text()
         self.assertIn('DEPLOY_SHA: ${{ github.sha }}', workflow)
         self.assertIn('envs: EDGE_IMAGE,DEPLOY_SHA', workflow)
+        self.assertIn("-p 'test_infra_revision.py' -v", workflow)
 
 
 if __name__ == '__main__':

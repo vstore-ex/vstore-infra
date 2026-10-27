@@ -55,6 +55,9 @@ jobs:
       - name: Verify release state and deployment failure handling
         run: python3 -m unittest discover -s tests -p 'test_release_state.py' -v
 
+      - name: Verify validated infrastructure revision and obsolete runs
+        run: python3 -m unittest discover -s tests -p 'test_infra_revision.py' -v
+
       - name: Verify isolated deployment and rollback across fresh sessions
         run: python3 tests/smoke_release_state.py
 
