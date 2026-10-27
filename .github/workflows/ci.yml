@@ -251,8 +251,9 @@ jobs:
         uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17 # v1.2.0
         env:
           EDGE_IMAGE: ${{ needs.build-proxy.outputs.image }}
+          DEPLOY_SHA: ${{ github.sha }}
         with:
-          envs: EDGE_IMAGE
+          envs: EDGE_IMAGE,DEPLOY_SHA
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY || secrets.SSH_PRIVATE_KEY }}
@@ -279,10 +280,22 @@ jobs:
             PREV_GIT_COMMIT=$(git rev-parse HEAD 2>/dev/null || true)
             echo "==> Pre-deploy commit: ${PREV_GIT_COMMIT:-none}"
 
-            echo "==> Synchronizing repository state from origin/main..."
+            # Reject obsolete runs under the deployment lock before changing config.
+            # A newer main requires its own successful validation and edge scan.
+            if ! [[ "${DEPLOY_SHA:-}" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "ERROR: DEPLOY_SHA must be the full validated commit SHA."
+              exit 1
+            fi
+            git fetch origin refs/heads/main:refs/remotes/origin/main
+            if [ "$DEPLOY_SHA" != "$(git rev-parse refs/remotes/origin/main)" ]; then
+              echo "ERROR: Obsolete infrastructure run; dispatch the current main commit."
+              exit 1
+            fi
+            echo "==> Applying validated infrastructure commit: $DEPLOY_SHA"
             # Tracked Nginx mounts must stay readable without DAC_OVERRIDE.
-            # The private deployment parent protects the clone on the host.
-            (umask 022; git fetch origin main; git reset --hard origin/main)
+            (umask 022; git reset --hard "$DEPLOY_SHA")
+            test "$(git rev-parse HEAD)" = "$DEPLOY_SHA"
+            echo "==> Checked-out infrastructure commit: $(git rev-parse HEAD)"
 
             # Adopt healthy running digests once, then ignore stale .env image pins.
             python3 scripts/secure-deployment.py
@@ -346,4 +359,4 @@ jobs:
               exit 1
             fi
 
-            echo "==> Infra stack config applied successfully."
+            echo "==> Infra stack config applied successfully at $DEPLOY_SHA."
