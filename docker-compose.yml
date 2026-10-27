@@ -172,6 +172,8 @@ services:
   frontend:
     <<: *default-hardening
     image: ${FRONTEND_IMAGE:-ghcr.io/vstore-ex/vstore-front:latest}
+    environment:
+      EDGE_PROXY_IP: ${EDGE_PROXY_IP:-172.31.240.2}
     restart: unless-stopped
     logging: *default-logging
     deploy:
@@ -197,6 +199,8 @@ services:
   admin:
     <<: *default-hardening
     image: ${ADMIN_IMAGE:-ghcr.io/vstore-ex/vstore-admin:latest}
+    environment:
+      EDGE_PROXY_IP: ${EDGE_PROXY_IP:-172.31.240.2}
     restart: unless-stopped
     logging: *default-logging
     deploy:

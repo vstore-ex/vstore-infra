@@ -77,7 +77,8 @@ with tempfile.TemporaryDirectory(prefix="vstore-identity-smoke-") as directory:
     for name in ("frontend", "admin"):
         fixture["services"][name] = {
             "image": "nginx:1.27-alpine", "networks": services[name]["networks"], "healthcheck": health,
-            "volumes": [str(FIXTURES / (name + ".conf")) + ":/etc/nginx/conf.d/default.conf:ro"],
+            "environment": {**services[name]["environment"], "NGINX_ENVSUBST_FILTER": "^EDGE_PROXY_IP$"},
+            "volumes": [str(FIXTURES / (name + ".conf")) + ":/etc/nginx/templates/default.conf.template:ro"],
             "depends_on": {"backend": {"condition": "service_healthy"}},
         }
     fixture["services"]["proxy"] = {
@@ -112,13 +113,29 @@ with tempfile.TemporaryDirectory(prefix="vstore-identity-smoke-") as directory:
                 assert result["status"] == 200 and result["data"]["ip"] == addresses[3], result
                 assert result["data"]["xff"] == addresses[3] + ", " + addresses[0], result
                 assert result["data"]["forwarded"] is None, result
+                assert result["data"]["scheme"] == "https", result
             second = client([request("https://proxy/api/identity", host=host)], "client-b")[0]
             assert second["data"]["ip"] == addresses[4], second
+        for host in ("vstore.local", "admin.vstore.local"):
+            for spoofed_proto in ("http", "https", "invalid"):
+                item = request("https://proxy/api/slash", host=host)
+                item["headers"].append(["X-Forwarded-Proto", spoofed_proto])
+                result = client([item])[0]
+                assert result["status"] == 307, result
+                assert result["location"] == "https://" + host + "/api/slash/", result
+            for app in ("frontend", "admin"):
+                item = request("http://" + app + ":8080/api/slash", host=host)
+                item["headers"].extend([["X-Forwarded-Proto", "https"], ["X-Forwarded-Proto", "http"]])
+                result = client([item])[0]
+                assert result["status"] == 307, result
+                assert result["location"] == "http://" + host + "/api/slash/", result
+        print("PASS: real Uvicorn slash redirects preserve HTTPS on both TLS chains; direct spoofed schemes stay HTTP", flush=True)
         print("PASS: both TLS chains replace spoofed/duplicate XFF and preserve distinct clients", flush=True)
 
         for target in ("http://frontend:8080", "http://admin:8080", "http://backend:8000"):
             for result in client([request(target + "/api/identity", "198.51.100." + str(index)) for index in range(1, 5)]):
                 assert result["status"] == 200 and result["data"]["ip"] == addresses[3], result
+                assert result["data"]["scheme"] == "http", result
         outsider = client([request("http://backend:8000/api/identity", "203.0.113.88")], "untrusted")[0]
         assert outsider["status"] == 200 and outsider["data"]["ip"] != "203.0.113.88", outsider
         print("PASS: direct app/backend and data-network requests cannot claim a forwarded identity", flush=True)
