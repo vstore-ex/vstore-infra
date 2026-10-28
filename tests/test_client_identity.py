@@ -36,6 +36,17 @@ class ClientIdentityConfigTests(unittest.TestCase):
         for name in ("postgres", "redis", "worker"):
             self.assertEqual(set(services[name]["networks"]), {"app_net"})
 
+    def test_backend_and_worker_receive_news_email_configuration(self):
+        services = self.config()["services"]
+        expected = {
+            "RESEND_API_KEY": "replace-with-resend-api-key",
+            "EMAIL_FROM": "VStore <no-reply@your-verified-domain.example>",
+        }
+        for name in ("backend", "worker"):
+            environment = services[name]["environment"]
+            for key, value in expected.items():
+                self.assertEqual(environment[key], value)
+
     def test_edge_replaces_instead_of_appending_forwarding_headers(self):
         template = (ROOT / "config/nginx/templates/default.conf.template").read_text()
         self.assertNotIn("$proxy_add_x_forwarded_for", template)

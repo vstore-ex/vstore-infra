@@ -154,6 +154,8 @@ services:
           memory: 1024M
     environment:
       <<: *backend-env
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-}
       AUTO_MIGRATE: "false"
     # Worker runs celery (no HTTP server) but shares the backend image whose
     # HEALTHCHECK probes HTTP :8000 — without this compose --wait fails on it.
