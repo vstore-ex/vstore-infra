@@ -1,0 +1,15 @@
+services:
+  alloy:
+    network_mode: !reset null
+    networks: [monitoring, application]
+    environment:
+      MONITORING_PROMETHEUS_URL: http://prometheus:9090/api/v1/write
+      MONITORING_LOKI_URL: http://loki:3100/loki/api/v1/push
+      MONITORING_API_ADDRESS: backend:8000
+    # Docker Desktop cannot validate Linux host mounts: use container proc/rootfs here.
+    volumes: !override
+      - ${OBS_CONFIG_ROOT:?}/config.alloy:/etc/alloy/config.alloy:ro
+      - alloy:/var/lib/alloy
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /proc:/host/proc:ro
+      - /sys:/sys:ro

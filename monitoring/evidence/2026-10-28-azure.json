@@ -1,0 +1,34 @@
+{
+  "date": "2026-10-28",
+  "account_url": "https://vstorestorage.blob.core.windows.net",
+  "environment": "authorized SDK connectivity check from existing backend container",
+  "containers": [
+    {
+      "name": "vstore-obs-logs",
+      "created": true,
+      "public_access": null,
+      "upload_download_hash_match": true,
+      "anonymous_get_status": 404
+    },
+    {
+      "name": "vstore-obs-metrics",
+      "created": true,
+      "public_access": null,
+      "upload_download_hash_match": true,
+      "anonymous_get_status": 404
+    }
+  ],
+  "active_test_blobs_deleted": true,
+  "media_changed": false,
+  "production_monitoring_activated": false,
+  "limitations": [
+    "Existing application credential used in-place; no credential exported or committed",
+    "This checks real Azure CRUD and privacy, not production Loki/Thanos adoption",
+    "Account soft-delete and lifecycle policies were not modified"
+  ],
+  "production_vm_memory_kib": {
+    "total": 873904,
+    "available_at_check": 212204
+  },
+  "production_adoption_gate": "Blocked pending #76 resource fit; no VM upgrade authorized"
+}
