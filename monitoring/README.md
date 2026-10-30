@@ -128,6 +128,79 @@ prove Linux host/per-container coverage; use the Linux fixture for that evidence
   if an agreed rule needs a longer lookback; a Blob query adapter is not a source
   for Prometheus's local rule engine by itself.
 
+## Production OOM containment (explicit opt-in)
+
+On 2026-10-30 the reviewed guard was installed and its kernel limits verified
+on production. The slice was **empty** (zero RAM/swap usage); no monitoring
+containers were active. All eight application container IDs and start timestamps
+were unchanged and `/health` returned 200 with the database connected.
+The running backend `/metrics` still returned 404. This is host protection
+installation only, not full monitoring adoption or resource-fit acceptance.
+See [the installation evidence](evidence/2026-10-30-oom-guard.json).
+
+The owner authorized host protection on 2026-10-30. Install the bounded slice
+without starting monitoring or touching application containers:
+
+```bash
+sudo bash scripts/monitoring-guard.sh install
+sudo bash scripts/monitoring-guard.sh check
+```
+
+Requires Linux cgroup v2 and Docker's systemd driver. The installer refuses an
+existing different unit. It writes only `/etc/systemd/system/vstore-monitoring.slice`,
+reloads systemd and enables/starts that empty slice. No daemon restart is needed.
+The resulting cgroup must be `/vstore.slice/vstore-monitoring.slice`, with
+`memory.max=268435456` and `memory.swap.max=536870912`.
+
+Before **each** authorized production start, run the guard check successfully,
+then include **both** files on every Compose command:
+
+```bash
+sudo bash scripts/monitoring-guard.sh check &&
+docker compose -p vstore-monitoring --env-file /absolute/private/vstore-monitoring/compose.env -f monitoring/compose.yml -f monitoring/production.yml up -d
+```
+
+The overlay assigns every monitoring container (including initialization and
+privileged Alloy) to the same aggregate parent, sets OOM score adjustment +500,
+and disables automatic restart. Monitoring also stays down after a VM or Docker
+restart; the owner must explicitly run the guarded startup command above.
+After any monitoring OOM, inspect the cause and
+budget before explicitly restarting it. Never start production with base Compose
+alone: it has only per-container ceilings and remains portable for local fixtures.
+For existing monitoring containers, changing parent requires recreation of the
+monitoring project only; installation does not move running containers.
+
+The initial **256 MiB RAM + 512 MiB swap** aggregate budget prioritizes the
+853 MiB host's application workloads over monitoring completeness. CPU is capped
+at 50% of one core and tasks at 256. The previous 711 MiB fixture snapshot does
+not prove this RAM/swap budget works: reclaim, peaks and swapping must be measured.
+Monitoring may fail entirely under this budget. Do not raise it automatically.
+A cgroup-local OOM cannot select an application process outside that subtree;
++500 only biases victim choice during global OOM and does not grant immunity.
+The slice reserves no memory for applications, bounds no application growth and
+cannot guarantee the whole host never runs out of memory. Privileged Alloy is
+trusted root-equivalent software and can alter host policy; this containment is
+for resource exhaustion, not a security boundary against a hostile collector.
+
+Production activation remains blocked until backend metrics are verified on the
+running image and #76 accepts measured resource/disk impact. Installing an empty
+slice is not monitoring adoption. Verify container `HostConfig.CgroupParent`,
+`OomScoreAdj`, restart policy and the live parent limits after an eventual start.
+
+Rollback: first stop only the monitoring project with the same two `-f` files
+and `down` **without `-v`**. With no remaining processes in its cgroup, run
+`sudo systemctl disable --now vstore-monitoring.slice`, remove only the installed
+unit if it still exactly matches the reviewed source, then run
+`sudo systemctl daemon-reload`. Do not remove a slice containing running containers.
+No application image, service, sysctl, swap file or database changes are required.
+
+The local privileged kernel regression is documented in
+`tests/smoke_monitoring_oom.py`. It uses a random subtree with an outer 192 MiB
+safety ceiling and a 48 MiB monitoring child, observes SIGKILL and `oom_kill`,
+and checks an application sibling remains alive. Run it only in a disposable
+local Docker VM, never production. It proves kernel cgroup OOM confinement;
+it does not replace the production systemd driver/parent verification.
+
 ## Diagnosis and safe stop
 
 Use the same `-p`, `--env-file` and `-f` arguments as startup for every command.

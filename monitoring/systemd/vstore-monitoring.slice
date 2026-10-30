@@ -1,0 +1,13 @@
+[Unit]
+Description=Bounded expendable VStore monitoring workloads
+
+[Slice]
+MemoryAccounting=yes
+MemoryMax=256M
+MemorySwapMax=512M
+CPUAccounting=yes
+CPUQuota=50%
+TasksMax=256
+
+[Install]
+WantedBy=slices.target

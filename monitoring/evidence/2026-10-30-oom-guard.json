@@ -1,0 +1,33 @@
+{
+  "date": "2026-10-30",
+  "scope": "Production installation of an empty monitoring resource slice only",
+  "unit": "vstore-monitoring.slice",
+  "enabled": true,
+  "active": true,
+  "cgroup": "/vstore.slice/vstore-monitoring.slice",
+  "kernel_limits": {
+    "memory.max": 268435456,
+    "memory.swap.max": 536870912,
+    "cpu.max": "50000 100000",
+    "pids.max": 256
+  },
+  "observed_usage_bytes": {
+    "memory.current": 0,
+    "memory.swap.current": 0
+  },
+  "application_verification": {
+    "container_count": 8,
+    "all_container_ids_and_started_at_unchanged": true,
+    "health_http_status": 200,
+    "health_response": {"status": "healthy", "database": "connected"},
+    "metrics_http_status": 404
+  },
+  "monitoring_containers_active": false,
+  "limitations": [
+    "No monitoring containers were started; this is not full monitoring adoption or measured resource fit",
+    "The production Compose cgroup parent remains to be verified on actual monitoring containers after separately authorized startup",
+    "The running backend metrics endpoint remains unavailable",
+    "Applications were not restarted or reconfigured",
+    "The slice does not prevent application-driven or whole-host global OOM"
+  ]
+}
