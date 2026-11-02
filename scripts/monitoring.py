@@ -27,6 +27,13 @@ def prepare(directory):
         raise ValueError(
             "All monitoring credentials/container names must be nonempty single-line values"
         )
+    # The pinned legacy Loki Azure client injects SharedKey authentication even
+    # for SAS connection strings (upstream #21596). Never emit unusable secrets.
+    if any(
+        part.split("=", 1)[0].strip().lower() == "sharedaccesssignature"
+        for part in values["MONITORING_LOGS_CONNECTION_STRING"].split(";")
+    ):
+        raise ValueError("The pinned Loki client does not support SAS authentication")
     logs, metrics = (
         values["MONITORING_LOGS_CONTAINER"],
         values["MONITORING_METRICS_CONTAINER"],

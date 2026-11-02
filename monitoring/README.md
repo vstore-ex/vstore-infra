@@ -34,8 +34,13 @@ on production merely because configuration/CI passes.
 1. Provision/approve two **existing private** containers through the owner's
    Azure process, with separately scoped credentials. `prepare` never provisions;
    Thanos container creation is explicitly disabled. Connection strings must
-   include `AccountName`; SAS strings may include it alongside `BlobEndpoint`.
-   Limit credentials to the intended container's read/list/write/delete access.
+   include `AccountName`. Thanos accepts a metrics-container SAS alongside
+   `BlobEndpoint`. The pinned legacy Loki Azure client does **not** support SAS
+   correctly (upstream [#21596](https://github.com/grafana/loki/issues/21596));
+   `prepare` rejects a logs SAS before writing files. Loki currently requires a
+   shared-key connection string. A storage account key has account-wide access;
+   do not describe it as container-scoped. Keep it private on the trusted host.
+   Container-scoped identity support remains a separate implementation choice.
 2. Supply the six values in `.env.example` using the host secret mechanism.
    `METRICS_TOKEN` must exactly match the verified backend's environment variable.
    Root Compose forwards it to the backend with an empty/disabled default.
@@ -202,6 +207,35 @@ local Docker VM, never production. It proves kernel cgroup OOM confinement;
 it does not replace the production systemd driver/parent verification.
 
 ## Diagnosis and safe stop
+
+### Controlled production trial, 2026-11-02
+
+The owner authorized first startup. The running backend already contained the
+instrumentation; its token was absent. An external private backend environment
+overlay enabled authenticated metrics on the same pinned image, under the shared
+deployment lock. Proxy recovery and image verification passed. The matching token
+is also in the ignored application `.env`; until PR #77 is adopted, application
+recreation must include the private backend overlay to retain metrics.
+
+Every monitoring container was verified under the bounded parent with OOM score
+500 and restart disabled. The stack reached its 256 MiB RAM ceiling and used
+approximately 224 MiB swap. There was no cgroup OOM kill, but two application
+health checks timed out after ten seconds. The trial stopped all monitoring
+containers; application health recovered to milliseconds. **The current full
+stack failed the availability check within this budget and remains stopped.**
+The limits contain memory consumption; they do not eliminate shared-disk swap
+contention. Do not repeat the full startup without addressing resource pressure.
+
+A subsequent isolated Loki check used the existing backend account credential
+without exporting it. Loki became ready, accepted/query-returned a synthetic log,
+and flushed it; Blob objects were verified separately. Thanos had successfully
+listed its private metrics container using a scoped SAS, but production block
+upload, historical queries and Grafana readiness were not established. The metrics
+SAS expires on 2026-12-02 and must be renewed before any later adoption.
+
+See [production trial evidence](evidence/2026-11-02-production-trial.json).
+Reduce the footprint and recheck application impact under #76 before claiming
+adoption. No VM resize, new Azure resources or real notifications were enabled.
 
 Use the same `-p`, `--env-file` and `-f` arguments as startup for every command.
 Check `ps`/`logs --tail 100` for stopped/OOM containers. If the UI is unavailable,

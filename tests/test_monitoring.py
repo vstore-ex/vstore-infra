@@ -10,6 +10,34 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class MonitoringComposeTests(unittest.TestCase):
+    def test_unsupported_loki_sas_fails_before_creating_secrets(self):
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp) / "secrets"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "scripts/monitoring.py"),
+                    "prepare",
+                    "--directory",
+                    str(directory),
+                ],
+                env={
+                    **os.environ,
+                    "METRICS_TOKEN": "test",
+                    "MONITORING_GRAFANA_PASSWORD": "test",
+                    "MONITORING_LOGS_CONNECTION_STRING": "BlobEndpoint=https://logs.blob.core.windows.net;AccountName=logs;SharedAccessSignature=private-test-sig",
+                    "MONITORING_METRICS_CONNECTION_STRING": "AccountName=metrics;SharedAccessSignature=private-test-sig",
+                    "MONITORING_LOGS_CONTAINER": "vstore-logs",
+                    "MONITORING_METRICS_CONTAINER": "vstore-metrics",
+                },
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(directory.exists())
+            self.assertNotIn("private-test-sig", result.stdout + result.stderr)
+
     def test_opt_in_stack_has_no_public_monitoring_ports(self):
         result = subprocess.run(
             [
