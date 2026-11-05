@@ -24,6 +24,8 @@ x-backend-env: &backend-env
   GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-}
   FRONTEND_URL: ${FRONTEND_URL:-}
   CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
+  # Simulated wallet top-up (no external payment service in this deployment).
+  ENABLE_DEMO_WALLET_TOP_UP: ${ENABLE_DEMO_WALLET_TOP_UP:-true}
 
 services:
   postgres:
