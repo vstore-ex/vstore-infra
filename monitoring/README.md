@@ -106,6 +106,39 @@ project. The collector has no arbitrary remote-config source configured. Do not
 attach untrusted workloads to the monitoring network. Docker Desktop cannot
 prove Linux host/per-container coverage; use the Linux fixture for that evidence.
 
+## Isolated Grafana resource probe (#67)
+
+The probe compares the Grafana image in this stack with a candidate previously
+tested in the resource experiment. It uses a new SQLite state directory each
+run, identical 128 MiB RAM and 0.5 CPU limits, no swap, and no network or host
+mounts. It exercises the authenticated organization API and checks that the
+same API rejects anonymous requests. It does not exercise dashboards or data
+sources. It never launches the monitoring Compose project.
+
+Run on local ARM64 Docker Desktop with cgroup v2. If the pinned images in
+`tests/probe_grafana_footprint.py` are absent, pull them explicitly before the
+measurement. Use a new report path for each run; the second command is a
+384 MiB control with all other limits unchanged:
+
+```sh
+python3 tests/probe_grafana_footprint.py --report /tmp/vstore-grafana-fit.json
+python3 tests/probe_grafana_footprint.py --memory-mib 384 --report /tmp/vstore-grafana-control.json
+```
+
+Compare the count and first completion time of authenticated HTTP 200
+responses within the observation window, container exit/OOM state, and cgroup
+peak and memory-limit events. The final authenticated and anonymous requests
+are separate post-window controls (expect HTTP 200 and 401 when ready). They do
+not count toward the window even if the last in-window check timed out.
+HTTP status 0 means the probe did not receive an HTTP response. On SIGINT or
+SIGTERM the probe finishes its current bounded Docker command, then cleans up
+its container and any anonymous volumes. SIGKILL cannot run cleanup.
+Elapsed time starts after `docker run -d` returns; the Docker probe processes
+also briefly use resources in the measured cgroup. This is a cold-start
+component screen, not a load benchmark, version recommendation, or evidence of
+fit on the production VM. Full-stack limits and application impact, restart and
+history queries remain part of #67/#76.
+
 ## Retention, local disk and failure behavior
 
 - Prometheus keeps a **6h target window**, 512 MB block size ceiling and equal
