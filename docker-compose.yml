@@ -23,6 +23,9 @@ x-backend-env: &backend-env
   GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
   GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-}
   FRONTEND_URL: ${FRONTEND_URL:-}
+  CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
+  # Simulated wallet top-up (no external payment service in this deployment).
+  ENABLE_DEMO_WALLET_TOP_UP: ${ENABLE_DEMO_WALLET_TOP_UP:-true}
 
 services:
   postgres:
@@ -153,6 +156,8 @@ services:
           memory: 1024M
     environment:
       <<: *backend-env
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-}
       AUTO_MIGRATE: "false"
     # Worker runs celery (no HTTP server) but shares the backend image whose
     # HEALTHCHECK probes HTTP :8000 — without this compose --wait fails on it.
