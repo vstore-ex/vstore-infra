@@ -120,6 +120,7 @@ with tempfile.TemporaryDirectory(prefix="vstore-release-smoke-") as directory:
         run("git", "add", "docker-compose.yml", "config")
         run("git", "commit", "-m", "test: update disposable infra configuration")
         run("git", "push", "origin", "main")
+        validated_sha = run("git", "rev-parse", "HEAD")
         run("git", "reset", "--hard", "HEAD^")
         run("docker", "compose", "build", "proxy")
         run("docker", "compose", "up", "-d", "--wait", "--wait-timeout", "60")
@@ -151,7 +152,7 @@ with tempfile.TemporaryDirectory(prefix="vstore-release-smoke-") as directory:
         assert release.load()[1]["FRONTEND_IMAGE"] == old
 
         # A fresh shell has stale .env pins and even a stale exported image.
-        fresh = {**os.environ, "FRONTEND_IMAGE": old, "PROXY_IMAGE": "unverified:latest", "EDGE_IMAGE": new}
+        fresh = {**os.environ, "FRONTEND_IMAGE": old, "PROXY_IMAGE": "unverified:latest", "EDGE_IMAGE": new, "DEPLOY_SHA": validated_sha}
         # Reject the first edge candidate and retain the exact legacy image.
         first_state = release.STATE.read_bytes()
         legacy_proxy = run('docker', 'inspect', '--format', '{{.Image}}', run('docker', 'compose', 'ps', '-q', 'proxy'))
@@ -175,6 +176,7 @@ with tempfile.TemporaryDirectory(prefix="vstore-release-smoke-") as directory:
         run('git', 'add', str(template))
         run('git', 'commit', '-m', 'test: change only edge template')
         run('git', 'push', 'origin', 'main')
+        fresh['DEPLOY_SHA'] = run('git', 'rev-parse', 'HEAD')
         run('git', 'reset', '--hard', 'HEAD^')
         subprocess.run(['bash', '-c', infra_script], env={**fresh, 'PATH': environment['PATH']}, check=True)
         assert run('docker', 'compose', 'exec', '-T', 'proxy', 'wget', '-qO-',
@@ -246,6 +248,7 @@ with tempfile.TemporaryDirectory(prefix="vstore-release-smoke-") as directory:
         run('git', 'add', 'scripts/proxy-health.py', 'docker-compose.yml', 'config')
         run('git', 'commit', '-m', 'test: candidate config with broken API')
         run('git', 'push', 'origin', 'main')
+        fresh['DEPLOY_SHA'] = run('git', 'rev-parse', 'HEAD')
         run('git', 'reset', '--hard', legacy)
         result = subprocess.run(['bash', '-c', infra_script], env={**fresh, 'PATH': environment['PATH']})
         assert result.returncode != 0
