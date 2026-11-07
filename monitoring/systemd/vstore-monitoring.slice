@@ -1,10 +1,12 @@
 [Unit]
 Description=Bounded expendable VStore monitoring workloads
 
+# Reviewed aggregate budget. scripts/monitoring-guard.sh reads these values;
+# change them only here, with a new measurement.
 [Slice]
 MemoryAccounting=yes
-MemoryMax=256M
-MemorySwapMax=512M
+MemoryMax=768M
+MemorySwapMax=0
 CPUAccounting=yes
 CPUQuota=50%
 TasksMax=256

@@ -8,3 +8,11 @@ scrape_configs:
   - job_name: prometheus
     static_configs:
       - targets: ["localhost:9090"]
+  # Upload and retention health: Prometheus deletes local blocks after its
+  # retention window whether or not the sidecar shipped them to Blob.
+  - job_name: thanos-sidecar
+    static_configs:
+      - targets: ["sidecar:10902"]
+  - job_name: thanos-compact
+    static_configs:
+      - targets: ["compact:10902"]

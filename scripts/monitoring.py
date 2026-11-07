@@ -48,6 +48,9 @@ def prepare(directory):
         )
     ):
         raise ValueError("Use two distinct valid private Blob container names")
+    # Generated compose.env runs every nonroot service as the preparing UID.
+    if os.getuid() == 0 or os.getgid() == 0:
+        raise ValueError("Run prepare as the unprivileged monitoring owner, not root")
     path = Path(directory)
     if (
         any(char in str(path) for char in ("\n", "\r", "\x00"))

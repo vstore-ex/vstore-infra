@@ -97,6 +97,9 @@ def main():
     eventually(lambda: series('node_cpu_seconds_total{job="host"}'))
     eventually(lambda: series('container_memory_working_set_bytes{job="containers"}'))
     eventually(lambda: series('probe_success{job="api-health"}'))
+    # Upload/retention health must be observable before a Blob outage loses blocks.
+    eventually(lambda: series('up{job="thanos-sidecar"} == 1'))
+    eventually(lambda: series('up{job="thanos-compact"} == 1'))
     if sys.platform == "linux":
         eventually(
             lambda: series(
@@ -200,6 +203,16 @@ def main():
             + urllib.parse.urlencode({"query": target["expr"]})
         )
         eventually(lambda path=path: grafana(path)["data"]["result"])
+    failures = next(
+        panel
+        for panel in dashboard["dashboard"]["panels"]
+        if panel["title"].startswith("Metric block upload failures")
+    )
+    path = (
+        "/api/datasources/proxy/uid/vstore-metrics/api/v1/query?"
+        + urllib.parse.urlencode({"query": failures["targets"][0]["expr"]})
+    )
+    eventually(lambda: grafana(path)["data"]["result"])
     expr = urllib.parse.urlencode({"query": 'vstore_http_requests_total{job="api"}'})
     assert grafana("/api/datasources/proxy/uid/vstore-metrics/api/v1/query?" + expr)[
         "data"

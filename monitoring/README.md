@@ -52,6 +52,9 @@ on production merely because configuration/CI passes.
    python3 scripts/monitoring.py prepare --directory /absolute/private/vstore-monitoring
    ```
 
+   Run it as the unprivileged account that owns monitoring, never with `sudo`:
+   `prepare` refuses UID/GID 0 because the generated runtime identity would
+   otherwise run every nonroot service as root.
    Directory mode is 0700; every file is 0600. Generated `compose.env` selects
    the preparing UID/GID so nonroot containers can read file-backed secrets on
    Linux. Initialization changes ownership only on this project's new named-volume
@@ -162,6 +165,16 @@ history queries remain part of #67/#76.
   must establish a dedicated disk/quota/reserve budget and exhaustion behavior,
   measure representative application impact and adjust ceilings. Never claim
   the 512 MB TSDB flag bounds total monitoring disk or silently upgrade the VM.
+- **Blob outage tolerance is about 5h.** Prometheus deletes local blocks once
+  they fall outside the 6h window (measured from its newest block), whether or
+  not the sidecar has uploaded them. A block is cut about an hour after its 2h
+  range ends, so an outage longer than roughly 5h permanently loses unshipped
+  blocks; nothing re-uploads them. This is derived from block timing, not
+  measured; an exhaustion drill remains part of #76.
+  Prometheus scrapes the sidecar and Compactor, and the dashboard shows the age
+  of the last successful upload and failed uploads in the last hour. Alerting
+  on these signals belongs to #75. Increase `retention.time` (and the disk
+  budget) if a longer outage must be survivable.
 - Rules in #75 must fit inside the local window. Increase retention and remeasure
   if an agreed rule needs a longer lookback; a Blob query adapter is not a source
   for Prometheus's local rule engine by itself.
@@ -187,8 +200,19 @@ sudo bash scripts/monitoring-guard.sh check
 Requires Linux cgroup v2 and Docker's systemd driver. The installer refuses an
 existing different unit. It writes only `/etc/systemd/system/vstore-monitoring.slice`,
 reloads systemd and enables/starts that empty slice. No daemon restart is needed.
-The resulting cgroup must be `/vstore.slice/vstore-monitoring.slice`, with
-`memory.max=268435456` and `memory.swap.max=536870912`.
+The resulting cgroup must be `/vstore.slice/vstore-monitoring.slice`. The
+guard reads the expected limits from
+[`systemd/vstore-monitoring.slice`](systemd/vstore-monitoring.slice), the single
+reviewed source; print them with `bash scripts/monitoring-guard.sh budget`.
+
+**Migrating the 2026-10-30 slice.** Production still has the earlier 256 MiB
+RAM + 512 MiB swap unit. `check` now reports a limit mismatch and `install`
+refuses to overwrite it. After separate authorization, with monitoring stopped,
+confirm `/sys/fs/cgroup/vstore.slice/vstore-monitoring.slice/cgroup.events`
+reports `populated 0`, then run
+`sudo systemctl disable --now vstore-monitoring.slice`, remove only
+`/etc/systemd/system/vstore-monitoring.slice`, `sudo systemctl daemon-reload`,
+and the `install` and `check` commands above.
 
 Before **each** authorized production start, run the guard check successfully,
 then include **both** files on every Compose command:
@@ -208,11 +232,17 @@ alone: it has only per-container ceilings and remains portable for local fixture
 For existing monitoring containers, changing parent requires recreation of the
 monitoring project only; installation does not move running containers.
 
-The initial **256 MiB RAM + 512 MiB swap** aggregate budget prioritizes the
-853 MiB host's application workloads over monitoring completeness. CPU is capped
-at 50% of one core and tasks at 256. The previous 711 MiB fixture snapshot does
-not prove this RAM/swap budget works: reclaim, peaks and swapping must be measured.
-Monitoring may fail entirely under this budget. Do not raise it automatically.
+The aggregate budget is **768 MiB RAM and no swap**; CPU is capped at 50% of
+one core and tasks at 256. It replaces the initial 256 MiB RAM + 512 MiB swap
+budget, which the 2026-11-02 trial showed cannot hold the stack: it filled
+256 MiB, swapped about 224 MiB on the shared disk, and application health
+checks timed out. The 2026-11-06 ThinkPad run sampled a 604.49 MiB aggregate
+peak (Grafana alone at 384 MiB) under synthetic load, which fits under 768 MiB
+with headroom. Swap is disabled so monitoring pressure ends in a monitoring
+OOM kill (expendable, restart disabled) instead of disk contention shared with
+the application. The budget assumes the resized VM described below; it is not
+yet validated with production load and Blob history. Monitoring may still fail
+under it. Change it only in the slice unit, with a new measurement.
 A cgroup-local OOM cannot select an application process outside that subtree;
 +500 only biases victim choice during global OOM and does not grant immunity.
 The slice reserves no memory for applications, bounds no application growth and
@@ -337,11 +367,14 @@ account policy or production monitoring process was changed. See
 [evidence/2026-10-28-azure.json](evidence/2026-10-28-azure.json). This verifies real
 Azure connectivity/privacy, not Loki/Thanos production adoption.
 
-A read-only VM measurement found 873904 KiB total RAM (853 MiB), with 212204 KiB
-available at the check (207 MiB). The complete current stack is **not approved
-for production adoption** on that envelope. #76 must establish a measured fit or
-return a resource/architecture decision to the owner. This draft does not resize
-the VM or activate monitoring.
+A read-only VM measurement on 2026-10-28 found 873904 KiB total RAM (853 MiB),
+with 212204 KiB available (207 MiB). After that, with explicit owner approval,
+the VM was resized from `Standard_B2ats_v2` to `Standard_B2als_v2`; SSH after the
+reboot reported 3,965,872 KiB usable guest RAM (about 3.78 GiB). Only the VM size
+changed. Re-measure available memory with the application running before any
+trial. The resize does not by itself approve production adoption: #76 must still
+accept measured fit, disk use and application impact. This PR does not activate
+monitoring.
 
 The isolated Linux snapshot used approximately **711 MiB** across the eight
 monitoring processes, excluding the test backend and Azurite. This is synthetic

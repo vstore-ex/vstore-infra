@@ -2,7 +2,7 @@
   "uid": "vstore-overview",
   "title": "VStore overview",
   "schemaVersion": 42,
-  "version": 1,
+  "version": 2,
   "editable": false,
   "refresh": "30s",
   "time": {
@@ -134,12 +134,12 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "rate(node_network_receive_bytes_total{job=\"host\",device!=\"lo\"}[5m])",
+          "expr": "rate(node_network_receive_bytes_total{job=\"host\",device!~\"lo|veth.*|docker.*|br-.*\"}[5m])",
           "legendFormat": "{{device}} receive"
         },
         {
           "refId": "B",
-          "expr": "rate(node_network_transmit_bytes_total{job=\"host\",device!=\"lo\"}[5m])",
+          "expr": "rate(node_network_transmit_bytes_total{job=\"host\",device!~\"lo|veth.*|docker.*|br-.*\"}[5m])",
           "legendFormat": "{{device}} transmit"
         }
       ],
@@ -431,7 +431,7 @@
     },
     {
       "id": 13,
-      "title": "Application logs (request ID remains a field)",
+      "title": "Application logs by service (request ID remains a field)",
       "type": "logs",
       "gridPos": {
         "x": 0,
@@ -446,7 +446,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{service=\"backend\"} | json"
+          "expr": "{service=~\"$service\"} | json"
         }
       ],
       "fieldConfig": {
@@ -462,6 +462,112 @@
           "placement": "bottom"
         }
       }
+    },
+    {
+      "id": 14,
+      "title": "Seconds since last metric block upload to Blob",
+      "description": "Normally under ~3h (2h blocks). Prometheus deletes local blocks after 6h whether or not they were uploaded, so an outage longer than about 5h loses unshipped history. No data means no upload has succeeded yet or the sidecar is not scraped.",
+      "type": "stat",
+      "gridPos": {
+        "x": 0,
+        "y": 56,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vstore-metrics"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "time() - max(thanos_objstore_bucket_last_successful_upload_time{job=\"thanos-sidecar\"} > 0)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "No fresh data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
+    },
+    {
+      "id": 15,
+      "title": "Metric block upload failures in the last hour",
+      "description": "Any value above 0 means blocks are not reaching Blob; they remain local only until Prometheus retention deletes them.",
+      "type": "stat",
+      "gridPos": {
+        "x": 12,
+        "y": 56,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vstore-metrics"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(thanos_shipper_upload_failures_total{job=\"thanos-sidecar\"}[1h]))"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No fresh data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
     }
-  ]
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "service",
+        "label": "Service",
+        "type": "query",
+        "datasource": {
+          "type": "loki",
+          "uid": "vstore-logs"
+        },
+        "query": {
+          "label": "service",
+          "stream": "",
+          "type": 1,
+          "refId": "LokiVariableQueryEditor-VariableQuery"
+        },
+        "definition": "label_values(service)",
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".+",
+        "current": {
+          "selected": true,
+          "text": [
+            "backend"
+          ],
+          "value": [
+            "backend"
+          ]
+        },
+        "refresh": 2,
+        "sort": 1
+      }
+    ]
+  }
 }
