@@ -55,3 +55,22 @@ One 30-minute window with synthetic one-request-per-second load, not peak
 traffic. No historical Grafana query older than the local window, seven-day
 retention or Blob outage drill on production. The metrics SAS expires on
 2026-12-02. Monitoring was left running after the trial.
+
+## Addendum: thrashing after the window
+
+About 20 minutes after the window ended (checked at 22:35–22:40 UTC, after the
+#77 deployment recreated the backend), the stack had degraded:
+
+- slice anonymous memory 629 MiB, file cache 25 MiB, `memory.events max` 542,891;
+  zero OOM kills;
+- Grafana 370 MiB of its 384 MiB cap;
+- slice memory pressure `full avg60` 30%; host I/O pressure `some avg60` 90%,
+  `full avg60` 73%; load average 9.3 on 2 vCPU;
+- Prometheus and sidecar `up=0`; Alloy timed out on the Docker socket and on
+  remote write; Loki batches were dropped.
+
+At 22:41 UTC the monitoring project was stopped (volumes kept). One minute
+later host I/O pressure `some avg10` was 5%, `/health` answered in 3 ms and every
+application container was healthy. Application impact between 22:17 and 22:41
+UTC was not measured. Conclusion: 768 MiB without swap is not a sustainable
+budget; the stack needs room for page cache as well as process memory.

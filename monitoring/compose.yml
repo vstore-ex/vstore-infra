@@ -126,7 +126,7 @@ services:
     <<: *service
     networks: [monitoring]
     image: grafana/grafana:13.3.0@sha256:488984b716c0862639f91a698adbe2862677a5a07bad42da5f03f3030883b205
-    mem_limit: 384m
+    mem_limit: 640m
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana-password

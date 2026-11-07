@@ -232,17 +232,28 @@ alone: it has only per-container ceilings and remains portable for local fixture
 For existing monitoring containers, changing parent requires recreation of the
 monitoring project only; installation does not move running containers.
 
-The aggregate budget is **768 MiB RAM and no swap**; CPU is capped at 50% of
-one core and tasks at 256. It replaces the initial 256 MiB RAM + 512 MiB swap
-budget, which the 2026-11-02 trial showed cannot hold the stack: it filled
-256 MiB, swapped about 224 MiB on the shared disk, and application health
-checks timed out. The 2026-11-06 ThinkPad run sampled a 604.49 MiB aggregate
-peak (Grafana alone at 384 MiB) under synthetic load, which fits under 768 MiB
-with headroom. Swap is disabled so monitoring pressure ends in a monitoring
-OOM kill (expendable, restart disabled) instead of disk contention shared with
-the application. The budget assumes the resized VM described below; it is not
-yet validated with production load and Blob history. Monitoring may still fail
-under it. Change it only in the slice unit, with a new measurement.
+The aggregate budget is **1536 MiB RAM (reclaim from 1280 MiB) and no swap**;
+CPU is capped at 50% of one core and tasks at 256. Grafana has its own 640 MiB
+ceiling. Earlier budgets failed on production:
+
+- 256 MiB + 512 MiB swap (2026-11-02): the stack swapped about 224 MiB on the
+  shared disk and application health checks timed out.
+- 768 MiB, no swap (2026-11-07): it passed a 30-minute window, but about 20
+  minutes later the processes held 629 MiB, leaving 25 MiB of page cache. With
+  no swap the kernel did not OOM-kill anything; it kept evicting and re-reading
+  program and data files instead. Host-wide I/O pressure reached about 90%
+  (load 9.3) and the stack stopped scraping. Grafana sat at 370 MiB of its
+  384 MiB cap. Stopping monitoring restored the host within a minute.
+
+A memory ceiling without swap does not end in a clean OOM kill: below the
+ceiling the kernel prefers to thrash file cache, and that disk traffic is shared
+with the application. The budget therefore leaves at least 512 MiB of cache room
+above the observed sustained use, and `MemoryHigh` starts reclaim inside the
+slice before the hard ceiling. The VM has 3,872 MiB; the application used about
+1,180 MiB, so at least 1 GiB stays free outside monitoring. systemd-oomd is not
+installed on production; pressure-based killing would be a separate host change.
+Change the budget only in the slice unit, with a new measurement, and stop
+monitoring on sustained I/O pressure (see below).
 A cgroup-local OOM cannot select an application process outside that subtree;
 +500 only biases victim choice during global OOM and does not grant immunity.
 The slice reserves no memory for applications, bounds no application growth and
@@ -269,7 +280,7 @@ and checks an application sibling remains alive. Run it only in a disposable
 local Docker VM, never production. It proves kernel cgroup OOM confinement;
 it does not replace the production systemd driver/parent verification.
 
-### Production trial at the 768 MiB budget, 2026-11-07
+### Production trial at the 768 MiB budget, 2026-11-07 (superseded)
 
 The owner-authorized trial migrated the production slice with the guard and ran
 the full stack for 30 minutes on the resized VM. Application probes saw 0 errors
@@ -279,6 +290,16 @@ from 8.7 to 9.8 ms (p99 14.6 to 34.0 ms). The slice held at its ceiling with
 kills, and the sidecar uploaded its first block to Blob. Backend metrics were
 not scraped because the running backend had no token. See
 [the trial evidence](evidence/2026-11-07-production-768-trial.md).
+
+That window was too short: the stack thrashed about 20 minutes after it ended
+and was stopped at 22:41 UTC (see the budget section above and the evidence
+addendum). The 768 MiB budget was replaced.
+
+**Stop condition for every production run:** stop the monitoring project when
+`/proc/pressure/io` reports `some avg60` above 20% for more than five minutes,
+or when `memory.events` in the slice shows a rising `high` counter together
+with application latency above the baseline. Trials must last at least three
+hours so that slow growth (Grafana, Loki caches) shows up.
 
 ## Diagnosis and safe stop
 
