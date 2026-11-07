@@ -296,10 +296,53 @@ and was stopped at 22:41 UTC (see the budget section above and the evidence
 addendum). The 768 MiB budget was replaced.
 
 **Stop condition for every production run:** stop the monitoring project when
-`/proc/pressure/io` reports `some avg60` above 20% for more than five minutes,
-or when `memory.events` in the slice shows a rising `high` counter together
-with application latency above the baseline. Trials must last at least three
-hours so that slow growth (Grafana, Loki caches) shows up.
+`/proc/pressure/io` reports `some avg300` above 20% (the kernel's five-minute
+average), or when the slice records a new OOM kill. The boot-managed watchdog
+below applies this rule every minute. Also stop on a rising `high` counter in
+the slice's `memory.events` together with application latency above the
+baseline. Trials must last at least three hours so that slow growth (Grafana,
+Loki caches) shows up.
+
+## Boot-managed service (#80)
+
+Three units in `systemd/` run monitoring without a login after every boot:
+
+- `vstore-monitoring.service` (oneshot, stays active): after `docker.service`
+  and the slice, `scripts/monitoring-service.sh start` waits up to 300 s for
+  the backend `/health`, runs `monitoring-guard.sh check`, and starts the project
+  with `-p vstore-monitoring`, the private `compose.env` and both Compose files
+  from the deployment checkout. A failed health wait or guard check leaves
+  monitoring stopped. `systemctl stop` runs `docker compose stop`; it never
+  removes containers or volumes.
+- `vstore-monitoring-watchdog.timer` runs `vstore-monitoring-watchdog.service`
+  every minute (first check five minutes after boot). It stops
+  `vstore-monitoring.service` when `some avg300` is above 20% or the slice has
+  an OOM kill newer than the last start, writes the reason to the journal and
+  `/run/vstore-monitoring/last-stop`, and never touches application containers.
+  Monitoring then stays down until a person starts it again.
+- Containers keep `restart: "no"`; systemd owns the lifecycle.
+
+Install (root, after the slice is installed and the private directory has been
+prepared by the unprivileged monitoring owner):
+
+```bash
+sudo bash scripts/monitoring-guard.sh install-service --env-file /absolute/private/vstore-monitoring/compose.env
+sudo systemctl start vstore-monitoring.service   # explicit first start
+sudo bash scripts/monitoring-guard.sh status
+```
+
+`install-service` refuses a private env file that is not 0600 in a 0700
+directory, owned by root, or not pointing at its own directory. It writes only
+non-secret paths to `/etc/vstore-monitoring/service.env` (the deployment checkout
+it was run from and the env file), installs the units only when no different
+units exist, and enables them for the next boot without starting anything.
+
+The units run as root and execute scripts from the deployment checkout, which
+the deployment user can write. That user already has passwordless sudo on the
+production host, so this adds no new privilege; restrict both together if that
+changes. Diagnose with `journalctl -u vstore-monitoring.service -u
+vstore-monitoring-watchdog.service`. To disable: `sudo systemctl disable --now
+vstore-monitoring-watchdog.timer vstore-monitoring.service`.
 
 ## Diagnosis and safe stop
 

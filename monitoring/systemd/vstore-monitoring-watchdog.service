@@ -1,0 +1,8 @@
+[Unit]
+Description=Stop VStore monitoring when it threatens the application
+After=vstore-monitoring.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/vstore-monitoring/service.env
+ExecStart=/bin/bash ${VSTORE_DEPLOY_PATH}/scripts/monitoring-service.sh watchdog
