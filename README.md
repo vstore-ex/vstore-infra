@@ -169,3 +169,12 @@ Deployment recovery reloads dependent Nginx proxies and checks both HTTPS API ro
 Database snapshot recovery requires stopped writers, a new target and explicit data/revision verification. See [manual database recovery](https://github.com/vstore-ex/Docs/blob/main/infra/database-recovery.md). Automatic rollback remains image-only.
 
 Off-host recovery bundles use encrypted restic in a dedicated private Azure container. The optional host timer checks on boot and retries every 15 minutes; it creates a copy only when the last completed off-host recovery point is at least 168 hours old. An interrupted/partial upload cannot postpone retry. Installation, four-week retention proposal, credential escrow and isolated replacement recovery are described in [off-host backups](https://github.com/vstore-ex/Docs/blob/main/infra/offhost-backups.md). The timer is not installed or enabled by deployment; approve storage costs and the writer maintenance window before adoption.
+
+### Validated infrastructure revisions
+
+Infrastructure deployment forwards the workflow's full `github.sha` over SSH.
+Under the shared deployment lock it fetches main and rejects obsolete runs before
+changing the checkout or containers. Dispatch the current main revision after a
+newer commit supersedes a waiting run. Successful deployment logs record the
+validated/applied SHA; failure recovery keeps the previous configuration and image
+rollback path.
