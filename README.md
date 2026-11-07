@@ -178,3 +178,9 @@ changing the checkout or containers. Dispatch the current main revision after a
 newer commit supersedes a waiting run. Successful deployment logs record the
 validated/applied SHA; failure recovery keeps the previous configuration and image
 rollback path.
+
+## Opt-in observability
+
+See [monitoring/README.md](monitoring/README.md) for the separate private stack,
+Blob-backed metrics/logs, collector privilege exception, fixture verification and
+production-adoption gates. Standard application deployments do not start it.

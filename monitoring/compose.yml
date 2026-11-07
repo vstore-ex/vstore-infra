@@ -1,0 +1,163 @@
+x-service: &service
+  restart: unless-stopped
+  user: "${MONITORING_UID:-10001}:${MONITORING_GID:-10001}"
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  logging:
+    driver: json-file
+    options: {max-size: "5m", max-file: "2"}
+  cpus: 0.5
+  mem_limit: 256m
+
+services:
+  init:
+    <<: *service
+    networks: [monitoring]
+    image: grafana/alloy:v1.21.3@sha256:8ab871206bd2d8f89277f53abffee5f452a293980788d52f85fa183a87a505a4
+    user: "0:0"
+    cap_add: [CHOWN]
+    restart: "no"
+    entrypoint: [/bin/sh, -ec]
+    command: ["chown ${MONITORING_UID:-10001}:${MONITORING_GID:-10001} /state/* && chown 0:0 /state/alloy"]
+    volumes:
+      - prometheus:/state/prometheus
+      - alloy:/state/alloy
+      - loki:/state/loki
+      - grafana:/state/grafana
+      - store:/state/store
+      - compact:/state/compact
+  prometheus:
+    <<: *service
+    networks: [monitoring]
+    image: prom/prometheus:v3.15.1@sha256:fa3302279710be2f21a8301ec17a8b4f2301fd829bd113839b3b6b02b6f191a2
+    mem_limit: 384m
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=6h
+      - --storage.tsdb.retention.size=512MB
+      - --storage.tsdb.min-block-duration=2h
+      - --storage.tsdb.max-block-duration=2h
+      - --web.enable-remote-write-receiver
+    ports: ["127.0.0.1:${MONITORING_PROMETHEUS_PORT:-19090}:9090"]
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus:/prometheus
+    depends_on:
+      init: {condition: service_completed_successfully}
+  sidecar:
+    <<: *service
+    networks: [monitoring]
+    image: quay.io/thanos/thanos:v0.42.5@sha256:0a546b98a8dd47735456ab389983675ee363d68127e334937a9fceeea10da5e7
+    command: [sidecar, --prometheus.url=http://prometheus:9090, --tsdb.path=/prometheus, --objstore.config-file=/run/secrets/thanos.yml, --http-address=0.0.0.0:10902, --grpc-address=0.0.0.0:10901]
+    volumes: ["prometheus:/prometheus"]
+    secrets: [thanos.yml]
+    depends_on:
+      init: {condition: service_completed_successfully}
+  store:
+    <<: *service
+    networks: [monitoring]
+    image: quay.io/thanos/thanos:v0.42.5@sha256:0a546b98a8dd47735456ab389983675ee363d68127e334937a9fceeea10da5e7
+    command: [store, --data-dir=/data, --objstore.config-file=/run/secrets/thanos.yml, --http-address=0.0.0.0:10902, --grpc-address=0.0.0.0:10901, --sync-block-duration=30s, --index-cache.config-file=/etc/thanos/store-cache.yml, --chunk-pool-size=64MB]
+    volumes: ["store:/data", "./store-cache.yml:/etc/thanos/store-cache.yml:ro"]
+    secrets: [thanos.yml]
+    depends_on:
+      init: {condition: service_completed_successfully}
+  query:
+    <<: *service
+    networks: [monitoring]
+    image: quay.io/thanos/thanos:v0.42.5@sha256:0a546b98a8dd47735456ab389983675ee363d68127e334937a9fceeea10da5e7
+    command: [query, --http-address=0.0.0.0:10902, --grpc-address=0.0.0.0:10901, --endpoint=sidecar:10901, --endpoint=store:10901, --query.max-concurrent=4, --query.timeout=30s]
+  compact:
+    <<: *service
+    networks: [monitoring]
+    image: quay.io/thanos/thanos:v0.42.5@sha256:0a546b98a8dd47735456ab389983675ee363d68127e334937a9fceeea10da5e7
+    mem_limit: 384m
+    command: [compact, --data-dir=/data, --objstore.config-file=/run/secrets/thanos.yml, --wait, --wait-interval=5m, --consistency-delay=30m, --retention.resolution-raw=7d, --retention.resolution-5m=7d, --retention.resolution-1h=7d, --downsampling.disable, --compact.concurrency=1, --http-address=0.0.0.0:10902]
+    volumes: ["compact:/data"]
+    secrets: [thanos.yml]
+    depends_on:
+      init: {condition: service_completed_successfully}
+  loki:
+    <<: *service
+    networks: [monitoring]
+    image: grafana/loki:3.7.9@sha256:0db216b630ae1f348a1584c67f3cead8b4c1fc839169a39501db664744158e28
+    mem_limit: 384m
+    ports: ["127.0.0.1:${MONITORING_LOKI_PORT:-13100}:3100"]
+    command: [-config.file=/run/secrets/loki.yml]
+    volumes: ["loki:/loki"]
+    secrets: [loki.yml]
+    depends_on:
+      init: {condition: service_completed_successfully}
+  alloy:
+    <<: *service
+    image: grafana/alloy:v1.21.3@sha256:8ab871206bd2d8f89277f53abffee5f452a293980788d52f85fa183a87a505a4
+    # Collector exception for PR review: root-equivalent socket + read-only host mounts.
+    user: "0:0"
+    # cAdvisor requires host cgroups/devices. Privileged mode supersedes cap_drop.
+    privileged: true
+    pid: host
+    cgroup: host
+    mem_limit: 512m
+    command: [run, --server.http.listen-addr=127.0.0.1:12345, --storage.path=/var/lib/alloy, /etc/alloy/config.alloy]
+    environment:
+      VSTORE_COMPOSE_PROJECT: ${VSTORE_COMPOSE_PROJECT:-vstore}
+      MONITORING_PROMETHEUS_URL: ${MONITORING_PROMETHEUS_URL:-http://127.0.0.1:${MONITORING_PROMETHEUS_PORT:-19090}/api/v1/write}
+      MONITORING_LOKI_URL: ${MONITORING_LOKI_URL:-http://127.0.0.1:${MONITORING_LOKI_PORT:-13100}/loki/api/v1/push}
+      MONITORING_API_ADDRESS: ${MONITORING_API_ADDRESS:-127.0.0.1:8080}
+    volumes:
+      - ./config.alloy:/etc/alloy/config.alloy:ro
+      - alloy:/var/lib/alloy
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - type: bind
+        source: ${MONITORING_CONTAINERD_SOCKET:-/run/containerd/containerd.sock}
+        target: /run/containerd/containerd.sock
+        read_only: true
+        bind: {create_host_path: false}
+      - /proc:/host/proc:ro
+      - /sys:/sys:ro
+      - /:/rootfs:ro
+      - /var/lib/docker:/var/lib/docker:ro
+    secrets: [metrics-token]
+    network_mode: host
+    depends_on:
+      init: {condition: service_completed_successfully}
+  grafana:
+    <<: *service
+    networks: [monitoring]
+    image: grafana/grafana:13.3.0@sha256:488984b716c0862639f91a698adbe2862677a5a07bad42da5f03f3030883b205
+    mem_limit: 384m
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana-password
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    ports: ["127.0.0.1:${MONITORING_GRAFANA_PORT:-3300}:3000"]
+    volumes:
+      - grafana:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    secrets: [grafana-password]
+    depends_on:
+      init: {condition: service_completed_successfully}
+
+networks:
+  monitoring: {}
+volumes:
+  prometheus: {}
+  alloy: {}
+  loki: {}
+  grafana: {}
+  store: {}
+  compact: {}
+secrets:
+  metrics-token:
+    file: ${MONITORING_SECRETS_DIR:?set absolute private secrets directory}/metrics-token
+  grafana-password:
+    file: ${MONITORING_SECRETS_DIR:?set absolute private secrets directory}/grafana-password
+  thanos.yml:
+    file: ${MONITORING_SECRETS_DIR:?set absolute private secrets directory}/thanos.yml
+  loki.yml:
+    file: ${MONITORING_SECRETS_DIR:?set absolute private secrets directory}/loki.yml

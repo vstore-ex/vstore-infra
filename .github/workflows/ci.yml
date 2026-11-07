@@ -89,6 +89,18 @@ jobs:
         run: python3 -m unittest tests/test_gateway.py -v
 
 
+  validate-monitoring:
+    name: Validate opt-in monitoring
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Verify private ports and fail-closed preparation
+        run: python3 -m unittest discover -s tests -p 'test_monitoring*.py' -v
+      - name: Run official validators without network or host collector privileges
+        run: python3 tests/validate_monitoring.py
+
   verify-offhost-recovery:
     name: Verify off-host replacement recovery
     runs-on: ubuntu-24.04

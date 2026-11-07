@@ -1,0 +1,239 @@
+{
+  "trial": {
+    "date": "2026-11-02",
+    "scope": "Controlled first production startup",
+    "initial_events": {
+      "low": "0",
+      "high": "0",
+      "max": "0",
+      "oom": "0",
+      "oom_kill": "0",
+      "oom_group_kill": "0"
+    },
+    "samples": [
+      {
+        "seconds": 0,
+        "application_healthy": true,
+        "memory_bytes": 268046336,
+        "swap_bytes": 5046272,
+        "events": {
+          "low": "0",
+          "high": "0",
+          "max": "677",
+          "oom": "0",
+          "oom_kill": "0",
+          "oom_group_kill": "0"
+        }
+      },
+      {
+        "seconds": 10,
+        "application_healthy": true,
+        "memory_bytes": 268165120,
+        "swap_bytes": 23916544,
+        "events": {
+          "low": "0",
+          "high": "0",
+          "max": "4727",
+          "oom": "0",
+          "oom_kill": "0",
+          "oom_group_kill": "0"
+        }
+      },
+      {
+        "seconds": 20,
+        "application_healthy": true,
+        "memory_bytes": 266203136,
+        "swap_bytes": 35950592,
+        "events": {
+          "low": "0",
+          "high": "0",
+          "max": "5289",
+          "oom": "0",
+          "oom_kill": "0",
+          "oom_group_kill": "0"
+        }
+      },
+      {
+        "seconds": 30,
+        "application_healthy": true,
+        "memory_bytes": 268320768,
+        "swap_bytes": 47472640,
+        "events": {
+          "low": "0",
+          "high": "0",
+          "max": "5917",
+          "oom": "0",
+          "oom_kill": "0",
+          "oom_group_kill": "0"
+        }
+      },
+      {
+        "seconds": 40,
+        "application_healthy": true,
+        "memory_bytes": 265252864,
+        "swap_bytes": 60190720,
+        "events": {
+          "low": "0",
+          "high": "0",
+          "max": "6696",
+          "oom": "0",
+          "oom_kill": "0",
+          "oom_group_kill": "0"
+        }
+      },
+      {
+        "seconds": 50,
+        "application_healthy": true,
+        "memory_bytes": 268304384,
+        "swap_bytes": 98410496,
+        "events": {
+          "low": "0",
+          "high": "0",
+          "max": "8348",
+          "oom": "0",
+          "oom_kill": "0",
+          "oom_group_kill": "0"
+        }
+      },
+      {
+        "seconds": 60,
+        "application_healthy": true,
+        "memory_bytes": 268165120,
+        "swap_bytes": 140926976,
+        "events": {
+          "low": "0",
+          "high": "0",
+          "max": "9986",
+          "oom": "0",
+          "oom_kill": "0",
+          "oom_group_kill": "0"
+        }
+      },
+      {
+        "seconds": 70,
+        "application_healthy": true,
+        "memory_bytes": 268402688,
+        "swap_bytes": 161972224,
+        "events": {
+          "low": "0",
+          "high": "0",
+          "max": "11531",
+          "oom": "0",
+          "oom_kill": "0",
+          "oom_group_kill": "0"
+        }
+      },
+      {
+        "seconds": 80,
+        "application_healthy": true,
+        "memory_bytes": 268394496,
+        "swap_bytes": 160276480,
+        "events": {
+          "low": "0",
+          "high": "0",
+          "max": "13846",
+          "oom": "0",
+          "oom_kill": "0",
+          "oom_group_kill": "0"
+        }
+      },
+      {
+        "seconds": 90,
+        "application_healthy": true,
+        "memory_bytes": 250441728,
+        "swap_bytes": 179372032,
+        "events": {
+          "low": "0",
+          "high": "0",
+          "max": "14884",
+          "oom": "0",
+          "oom_kill": "0",
+          "oom_group_kill": "0"
+        }
+      },
+      {
+        "seconds": 100,
+        "application_healthy": true,
+        "memory_bytes": 268226560,
+        "swap_bytes": 198533120,
+        "events": {
+          "low": "0",
+          "high": "0",
+          "max": "16033",
+          "oom": "0",
+          "oom_kill": "0",
+          "oom_group_kill": "0"
+        }
+      },
+      {
+        "seconds": 110,
+        "application_healthy": false,
+        "memory_bytes": 268382208,
+        "swap_bytes": 228261888,
+        "events": {
+          "low": "0",
+          "high": "0",
+          "max": "20226",
+          "oom": "0",
+          "oom_kill": "0",
+          "oom_group_kill": "0"
+        }
+      },
+      {
+        "seconds": 120,
+        "application_healthy": false,
+        "memory_bytes": 267964416,
+        "swap_bytes": 234635264,
+        "events": {
+          "low": "0",
+          "high": "0",
+          "max": "21291",
+          "oom": "0",
+          "oom_kill": "0",
+          "oom_group_kill": "0"
+        }
+      }
+    ],
+    "outcome": "stopped_after_application_health_failures",
+    "application_healthy_after": true,
+    "containers": [
+      "alloy exited 143",
+      "compact exited 0",
+      "grafana exited 143",
+      "init exited 0",
+      "loki exited 2",
+      "prometheus exited 0",
+      "query exited 0",
+      "sidecar exited 0",
+      "store exited 0"
+    ]
+  },
+  "isolated_loki": {
+    "date": "2026-11-02",
+    "scope": "Isolated Loki using existing private backend credential; full stack stopped",
+    "ready": true,
+    "synthetic_log_query": true,
+    "flush_requested": true
+  },
+  "application_health_seconds_after_stop": [
+    0.0053,
+    0.0032,
+    0.0031
+  ],
+  "authenticated_metrics_status": 200,
+  "unauthenticated_metrics_status": 401,
+  "monitoring_running_count": 0,
+  "active_blob_object_counts": {
+    "logs": 3,
+    "metrics": 0
+  },
+  "limitations": [
+    "Full stack stopped after two application health timeouts; no production adoption",
+    "No OOM kill observed in monitoring slice; memory pressure and swap use still affected availability",
+    "Loki uses existing backend account credential privately on the server because pinned legacy client fails with container SAS; no key exported",
+    "Thanos uses a separate metrics-container SAS expiring 2026-12-02",
+    "No metric block upload or Grafana history was proven in this production trial",
+    "Backend uses an external metrics env overlay until infrastructure PR77 is adopted; application .env contains the matching token",
+    "No VM resizing, new Azure resources, data deletion or real alert activation"
+  ]
+}

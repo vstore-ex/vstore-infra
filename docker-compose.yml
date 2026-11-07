@@ -115,6 +115,7 @@ services:
           memory: 1024M
     environment:
       <<: *backend-env
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       EMAIL_FROM: ${EMAIL_FROM:-}
       PORT: 8080

@@ -1,0 +1,15 @@
+# Explicit Linux/systemd opt-in. Run monitoring-guard.sh check before each up.
+x-guard: &guard
+  cgroup_parent: vstore-monitoring.slice
+  oom_score_adj: 500
+  restart: "no"
+services:
+  init: {<<: *guard}
+  prometheus: {<<: *guard}
+  sidecar: {<<: *guard}
+  store: {<<: *guard}
+  query: {<<: *guard}
+  compact: {<<: *guard}
+  loki: {<<: *guard}
+  alloy: {<<: *guard}
+  grafana: {<<: *guard}
