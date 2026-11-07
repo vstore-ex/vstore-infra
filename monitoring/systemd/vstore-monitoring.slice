@@ -5,7 +5,8 @@ Description=Bounded expendable VStore monitoring workloads
 # change them only here, with a new measurement.
 [Slice]
 MemoryAccounting=yes
-MemoryMax=768M
+MemoryHigh=1280M
+MemoryMax=1536M
 MemorySwapMax=0
 CPUAccounting=yes
 CPUQuota=50%

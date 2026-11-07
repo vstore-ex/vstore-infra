@@ -22,14 +22,16 @@ bytes() {
   esac
   echo "$n"
 }
+memory_high=$(bytes "$(setting MemoryHigh)")
 memory_max=$(bytes "$(setting MemoryMax)")
+(( memory_high < memory_max )) || { echo "MemoryHigh must be below MemoryMax" >&2; exit 1; }
 swap_max=$(bytes "$(setting MemorySwapMax)")
 tasks_max=$(setting TasksMax)
 cpu_quota=$(setting CPUQuota)
 [[ $tasks_max =~ ^[0-9]+$ && $cpu_quota =~ ^([0-9]+)%$ ]] || { echo 'Unsupported TasksMax/CPUQuota' >&2; exit 1; }
 cpu_percent=${BASH_REMATCH[1]}
 if [[ $action == budget ]]; then
-  printf 'memory.max=%s\nmemory.swap.max=%s\npids.max=%s\ncpu.percent=%s\n' "$memory_max" "$swap_max" "$tasks_max" "$cpu_percent"
+  printf 'memory.high=%s\nmemory.max=%s\nmemory.swap.max=%s\npids.max=%s\ncpu.percent=%s\n' "$memory_high" "$memory_max" "$swap_max" "$tasks_max" "$cpu_percent"
   exit 0
 fi
 
@@ -51,8 +53,8 @@ systemctl is-active --quiet "$unit"
 path=$(systemctl show "$unit" --property=ControlGroup --value)
 [[ $path == /vstore.slice/vstore-monitoring.slice ]] || { echo 'Unexpected parent cgroup' >&2; exit 1; }
 base=/sys/fs/cgroup$path
-[[ $(cat "$base/memory.max") == "$memory_max" && $(cat "$base/memory.swap.max") == "$swap_max" ]] || { echo 'Memory guard limits do not match reviewed budget' >&2; exit 1; }
+[[ $(cat "$base/memory.high") == "$memory_high" && $(cat "$base/memory.max") == "$memory_max" && $(cat "$base/memory.swap.max") == "$swap_max" ]] || { echo 'Memory guard limits do not match reviewed budget' >&2; exit 1; }
 [[ $(cat "$base/pids.max") == "$tasks_max" ]] || { echo 'Task guard limit does not match reviewed budget' >&2; exit 1; }
 read -r quota period < "$base/cpu.max"
 [[ $quota =~ ^[0-9]+$ && $period =~ ^[0-9]+$ ]] && (( quota * 100 == period * cpu_percent )) || { echo 'CPU guard limit does not match reviewed budget' >&2; exit 1; }
-echo "Monitoring guard verified: $((memory_max / 1048576)) MiB RAM + $((swap_max / 1048576)) MiB swap; no application changes"
+echo "Monitoring guard verified: reclaim from $((memory_high / 1048576)) MiB, $((memory_max / 1048576)) MiB RAM + $((swap_max / 1048576)) MiB swap; no application changes"
