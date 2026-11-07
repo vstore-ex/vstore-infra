@@ -269,6 +269,17 @@ and checks an application sibling remains alive. Run it only in a disposable
 local Docker VM, never production. It proves kernel cgroup OOM confinement;
 it does not replace the production systemd driver/parent verification.
 
+### Production trial at the 768 MiB budget, 2026-11-07
+
+The owner-authorized trial migrated the production slice with the guard and ran
+the full stack for 30 minutes on the resized VM. Application probes saw 0 errors
+in 1,800 samples; `/health` p95 stayed at about 6 ms and the games API p95 moved
+from 8.7 to 9.8 ms (p99 14.6 to 34.0 ms). The slice held at its ceiling with
+552 MiB anonymous memory and the rest reclaimable cache, with no swap and no OOM
+kills, and the sidecar uploaded its first block to Blob. Backend metrics were
+not scraped because the running backend had no token. See
+[the trial evidence](evidence/2026-11-07-production-768-trial.md).
+
 ## Diagnosis and safe stop
 
 ### Controlled production trial, 2026-11-02
