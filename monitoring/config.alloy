@@ -18,8 +18,8 @@ prometheus.exporter.unix "host" {
   procfs_path = "/host/proc"
   sysfs_path = "/sys"
   rootfs_path = "/rootfs"
-  enable_collectors = ["cpu", "meminfo", "filesystem", "netdev", "loadavg", "pressure"]
-  set_collectors = ["cpu", "meminfo", "filesystem", "netdev", "loadavg", "pressure"]
+  enable_collectors = ["cpu", "meminfo", "filesystem", "netdev", "loadavg", "pressure", "uname", "diskstats", "vmstat", "stat", "filefd", "sockstat", "netstat", "time", "timex", "entropy", "processes", "schedstat", "softnet"]
+  set_collectors = ["cpu", "meminfo", "filesystem", "netdev", "loadavg", "pressure", "uname", "diskstats", "vmstat", "stat", "filefd", "sockstat", "netstat", "time", "timex", "entropy", "processes", "schedstat", "softnet"]
 }
 prometheus.scrape "host" {
   targets = discovery.relabel.host_targets.output
@@ -32,6 +32,8 @@ prometheus.exporter.cadvisor "containers" {
   containerd_namespace = "moby"
   docker_only = true
   store_container_labels = false
+  // Only the Compose project/service labels, for per-service dashboards.
+  allowlisted_container_labels = ["com.docker.compose.project", "com.docker.compose.service"]
   storage_duration = "1m"
 }
 prometheus.scrape "containers" {
@@ -111,4 +113,14 @@ discovery.relabel "health_targets" {
     target_label = "job"
     replacement = "api-health"
   }
+}
+
+// Alloy's own health (remote write queues, component errors) for the
+// monitoring-health dashboard.
+prometheus.exporter.self "alloy" {}
+prometheus.scrape "alloy" {
+  targets = prometheus.exporter.self.alloy.targets
+  forward_to = [prometheus.remote_write.local.receiver]
+  scrape_interval = "30s"
+  job_name = "alloy"
 }

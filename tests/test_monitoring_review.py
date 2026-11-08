@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
-DASHBOARD = ROOT / "monitoring/grafana/dashboards/overview.json"
+DASHBOARD = ROOT / "monitoring/grafana/dashboards/VStore/overview.json"
 
 
 def panel_exprs():
