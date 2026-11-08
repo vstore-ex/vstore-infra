@@ -344,7 +344,44 @@ changes. Diagnose with `journalctl -u vstore-monitoring.service -u
 vstore-monitoring-watchdog.service`. To disable: `sudo systemctl disable --now
 vstore-monitoring-watchdog.timer vstore-monitoring.service`.
 
-## Alert runbook
+## Dashboards
+
+Grafana provisions every file under `grafana/dashboards/`, one folder per directory:
+
+| Folder | Dashboard | Shows |
+|---|---|---|
+| VStore | VStore overview | VM, containers, API and logs at a glance |
+| VStore | VStore application | API traffic, 5xx, latency by route, slowest routes, app containers, error-looking logs, firing alerts |
+| VStore | VStore monitoring health | monitoring memory against the slice budget, I/O pressure, scrape targets, Alloy/Prometheus/Loki ingestion, Thanos uploads, Blob operations and compaction, Alertmanager |
+| Community | Node Exporter Full (grafana.com 1860) | full host detail: CPU, memory, disks, network, pressure, kernel |
+| Community | cadvisor dashboard (19792) | per-container resources, selectable by Compose project and container |
+| Community | Prometheus 2.0 Overview (3662) | Prometheus internals |
+| Community | Alertmanager (9578) | alerts, notifications, silences |
+| Community | Logs / App (13639) | log search by `service` |
+
+Community dashboards are vendored at pinned revisions with SHA-256 checks by
+`scripts/grafana-dashboards.py import`. It rewrites them to the provisioned
+datasources, gives them stable uids and a link to their grafana.com page, drops
+panels that need Kubernetes metrics and adapts Logs / App to the `service` label.
+To update one, change its revision and hash in the script and rerun it; do not
+edit the vendored JSON by hand. Thanos / Overview (12937) was not used: its
+queries need Kubernetes pod metrics; the monitoring-health dashboard covers
+Thanos instead.
+
+To fill them, Alloy enables more node exporter collectors (uname, diskstats,
+vmstat, stat, filefd, sockstat, netstat, time, timex, entropy, processes,
+schedstat, softnet), keeps the Compose project/service labels on container
+metrics and scrapes itself; Prometheus also scrapes Thanos Store/Query, Loki and
+Grafana.
+
+The fixture (`tests/run_monitoring.py`) runs every panel query through Grafana
+(`tests/dashboard_queries.py`), prints coverage per dashboard and fails when a
+VStore panel has no data without a listed reason. Docker Desktop has no
+per-container cgroup metrics and an overlay root filesystem, so container and
+filesystem panels are only required on Linux. Some community panels stay empty
+by design on this VM (hardware sensors, kernel features not present, cluster
+mode).
+
 
 Prometheus evaluates `rules/vstore-alerts.yml` every 30 s and sends alerts to
 Alertmanager (in the slice, no published port; Grafana datasource "VStore
