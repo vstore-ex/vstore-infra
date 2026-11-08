@@ -158,6 +158,19 @@ Run `bash tests/smoke-proxy.sh` to build and start the hardened proxy with an em
 For a public storefront hostname and a local admin hostname, set `ADMIN_CERT_NAME` to the existing local certificate directory (for example `vstore.local`) and `CERTBOT_INCLUDE_ADMIN_DOMAIN=0`. Issue the public certificate before switching `FRONTEND_DOMAIN`, so the fallback generator does not create an unmanaged directory at the intended Certbot certificate path. The admin continues to use its self-signed certificate.
 
 
+## Capacity test results
+
+Catalog/media load tests and deployment-overlap measurements were completed on
+an isolated x86-64 test host on 2026-10-14. All recorded HTTP responses were 200,
+all accepted videos finished processing, and no OOM or unexpected restart occurred.
+The experimental candidate also passed the container memory-reserve checks.
+
+These results did not drive a resize, and further load tests are not required
+diploma deliverables. Production was later resized to `Standard_B2als_v2`
+(~3.78 GiB) for monitoring; the load was not repeated there. The
+[test summary](docs/capacity-2026-10-14.md) is supporting documentation, not a
+production capacity guarantee.
+
 ## Commit messages
 
 Run `npm ci` with Node.js 22.12+ to enable the local Conventional Commits
