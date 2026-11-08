@@ -341,7 +341,23 @@ The units run as root and execute scripts from the deployment checkout, which
 the deployment user can write. That user already has passwordless sudo on the
 production host, so this adds no new privilege; restrict both together if that
 changes. Diagnose with `journalctl -u vstore-monitoring.service -u
-vstore-monitoring-watchdog.service`. To disable: `sudo systemctl disable --now
+vstore-monitoring-watchdog.service`.
+
+**Deployments (#81).** After the application stack converges, the infrastructure
+deployment runs `scripts/monitoring-deploy.sh` under the deployment lock. When
+`vstore-monitoring.service` is enabled and the deployed commit changed
+`monitoring/`, `scripts/monitoring-service.sh` or `scripts/monitoring-guard.sh`,
+it runs `systemctl try-restart`, so a running stack picks up the new
+configuration while a stack stopped by the watchdog or an operator stays
+stopped. Installed unit files are copies: when a deployment changes one, the job
+prints a warning to reinstall with `install-service`. Monitoring problems are
+GitHub warnings and never fail or roll back the application deployment.
+
+**Credential renewal.** The metrics-container SAS used by Thanos expires on
+**2026-12-02**; after that, block uploads fail and the upload-age and
+upload-failure panels show it. The infrastructure owner (DevOps lead) renews it
+before that date: prepare a new private directory with the new connection
+string, then point `/etc/vstore-monitoring/service.env` at it. To disable: `sudo systemctl disable --now
 vstore-monitoring-watchdog.timer vstore-monitoring.service`.
 
 ## Diagnosis and safe stop
