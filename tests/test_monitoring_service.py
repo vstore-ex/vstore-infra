@@ -214,6 +214,27 @@ class WatchdogTests(unittest.TestCase):
         self.assertIn(f"`some avg300` above {limit.group(1)}%", readme)
 
 
+class ServiceIdentityTests(unittest.TestCase):
+    """2026-11-08 production: root had no `docker compose` (per-user plugin), so the
+    service failed to start. It must run as the private configuration's owner."""
+
+    def test_service_keeps_runtime_state_for_an_unprivileged_user(self):
+        service = unit("vstore-monitoring.service")["Service"]
+        self.assertNotIn("User", service, "the owner is set by the install-service drop-in")
+        self.assertEqual(service["RuntimeDirectory"], ["vstore-monitoring"])
+        self.assertEqual(service["RuntimeDirectoryPreserve"], ["yes"])
+
+    def test_watchdog_stays_root_to_stop_the_service(self):
+        self.assertNotIn("User", unit("vstore-monitoring-watchdog.service")["Service"])
+
+    def test_installer_runs_the_service_as_the_config_owner_in_the_docker_group(self):
+        guard = (ROOT / "scripts/monitoring-guard.sh").read_text()
+        self.assertIn("/etc/systemd/system/vstore-monitoring.service.d/owner.conf", guard)
+        self.assertRegex(guard, r"stat -c '%U' \"\$private_env\"")
+        self.assertIn("id -nG", guard)
+        self.assertIn("User=%s", guard)
+
+
 class InstallerTests(unittest.TestCase):
     def test_guard_installs_every_monitoring_unit_from_the_repository(self):
         guard = (ROOT / "scripts/monitoring-guard.sh").read_text()

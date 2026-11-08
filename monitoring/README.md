@@ -337,8 +337,13 @@ non-secret paths to `/etc/vstore-monitoring/service.env` (the deployment checkou
 it was run from and the env file), installs the units only when no different
 units exist, and enables them for the next boot without starting anything.
 
-The units run as root and execute scripts from the deployment checkout, which
-the deployment user can write. That user already has passwordless sudo on the
+`vstore-monitoring.service` runs as the owner of the private env file, through
+the drop-in `/etc/systemd/system/vstore-monitoring.service.d/owner.conf` that
+`install-service` writes. That user must be in the `docker` group and have
+Docker Compose (on production the Compose plugin is installed per user, so root
+cannot run it). The watchdog runs as root because it stops the service. Both
+execute scripts from the deployment checkout, which the deployment user can
+write. That user already has passwordless sudo on the
 production host, so this adds no new privilege; restrict both together if that
 changes. Diagnose with `journalctl -u vstore-monitoring.service -u
 vstore-monitoring-watchdog.service`.
