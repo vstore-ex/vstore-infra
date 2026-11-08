@@ -19,6 +19,8 @@ for request in json.loads(sys.argv[1]):
         connection.putheader(key, value)
     connection.endheaders()
     response = connection.getresponse()
-    results.append({"status": response.status, "data": json.loads(response.read()), "retry": response.getheader("Retry-After")})
+    body = response.read()
+    results.append({"status": response.status, "data": json.loads(body) if body else None,
+                    "retry": response.getheader("Retry-After"), "location": response.getheader("Location")})
     connection.close()
 print(json.dumps(results))

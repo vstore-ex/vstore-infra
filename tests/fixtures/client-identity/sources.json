@@ -7,14 +7,14 @@
   },
   "frontend.conf": {
     "repository": "vstore-front",
-    "path": "nginx/default.conf",
-    "commit": "2613c89b52f8dd895b01283fd310b62c8db441ff",
-    "sha256": "6c096b9ec899ebdeb243360003eae781ef4203104156207c1f8540fb9e6d487a"
+    "path": "nginx/default.conf.template",
+    "commit": "a79375fc10cdd99cfa364c4def4cf29fae1b3e33",
+    "sha256": "6177baa92b5e97a76701ce1f5bd9737890610d01edf8ba550a659e9fa0a3ed36"
   },
   "admin.conf": {
     "repository": "vstore-admin",
-    "path": "nginx/default.conf",
-    "commit": "127625300d798f52f822948f2926cbe0c6dbdd10",
-    "sha256": "da6b46a174bc90aa5fc48148e15aa9e7018d64fd160c335d6c0894764905aa3d"
+    "path": "nginx/default.conf.template",
+    "commit": "5adc86c679e3dc21852ac06155040d1a12dc6c2e",
+    "sha256": "033b2e6afba97102a158c04298ad33a2da4eb8cf408ae9b2acf2abda16c82d3a"
   }
 }

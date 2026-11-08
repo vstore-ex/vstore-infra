@@ -80,7 +80,8 @@ with tempfile.TemporaryDirectory(prefix="vstore-identity-smoke-") as directory:
     for name in ("frontend", "admin"):
         fixture["services"][name] = {
             "image": "nginx:1.27-alpine", "networks": services[name]["networks"], "healthcheck": health,
-            "volumes": [str(FIXTURES / (name + ".conf")) + ":/etc/nginx/conf.d/default.conf:ro"],
+            "environment": {**services[name]["environment"], "NGINX_ENVSUBST_FILTER": "^EDGE_PROXY_IP$"},
+            "volumes": [str(FIXTURES / (name + ".conf")) + ":/etc/nginx/templates/default.conf.template:ro"],
             "depends_on": {"backend": {"condition": "service_healthy"}},
         }
     fixture["services"]["proxy"] = {
@@ -122,7 +123,7 @@ ThreadingHTTPServer(('0.0.0.0', 8000), Handler).serve_forever()
     fixture['services']['proxy']['ports'] = ['127.0.0.1::443']
     test_client = Path(directory) / 'client.py'
     test_client.write_text((FIXTURES / 'client.py').read_text().replace(
-        'json.loads(response.read())', "response.read().decode(errors='replace')"))
+        'json.loads(body) if body else None', "body.decode(errors='replace')"))
     for name in ('client-a', 'client-b'):
         fixture['services'][name]['volumes'] = [str(test_client) + ':/probe/client.py:ro']
     compose_file.write_text(json.dumps(fixture))

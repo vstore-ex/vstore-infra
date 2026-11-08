@@ -33,6 +33,7 @@ def health():
 def identity(request: Request):
     return {
         "ip": limiter._client_ip(request),
+        "scheme": request.url.scheme,
         "xff": request.headers.get("x-forwarded-for"),
         "real_ip": request.headers.get("x-real-ip"),
         "forwarded": request.headers.get("forwarded"),
@@ -45,3 +46,8 @@ for path, count, window in (
     ("/api/v1/media/upload", 20, 60),
 ):
     app.add_api_route(path, identity, methods=["POST"], dependencies=[Depends(limiter.limit_requests(count, window))])
+
+
+@app.get("/api/slash/")
+def slash():
+    return {"ok": True}

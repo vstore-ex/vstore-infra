@@ -36,6 +36,16 @@ class ClientIdentityConfigTests(unittest.TestCase):
         for name in ("postgres", "redis", "worker"):
             self.assertEqual(set(services[name]["networks"]), {"app_net"})
 
+    def test_app_scheme_trust_matches_custom_edge_address(self):
+        config = json.loads(subprocess.check_output(
+            ["docker", "compose", "--env-file", ".env.example", "config", "--format", "json"],
+            cwd=ROOT, env={**os.environ, "EDGE_PROXY_IP": "172.31.240.8"}, text=True,
+        ))
+        services = config["services"]
+        for name in ("frontend", "admin"):
+            self.assertEqual(services[name]["environment"]["EDGE_PROXY_IP"],
+                             services["proxy"]["networks"]["proxy_net"]["ipv4_address"])
+
     def test_backend_and_worker_receive_news_email_configuration(self):
         services = self.config()["services"]
         expected = {
