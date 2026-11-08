@@ -165,12 +165,14 @@ history queries remain part of #67/#76.
   must establish a dedicated disk/quota/reserve budget and exhaustion behavior,
   measure representative application impact and adjust ceilings. Never claim
   the 512 MB TSDB flag bounds total monitoring disk or silently upgrade the VM.
-- **Blob outage tolerance is about 5h.** Prometheus deletes local blocks once
-  they fall outside the 6h window (measured from its newest block), whether or
-  not the sidecar has uploaded them. A block is cut about an hour after its 2h
-  range ends, so an outage longer than roughly 5h permanently loses unshipped
-  blocks; nothing re-uploads them. This is derived from block timing, not
-  measured; an exhaustion drill remains part of #76.
+- **Blob outage tolerance is about 6h (measured at 1:10 scale).** Prometheus
+  deletes local blocks once they fall outside the 6h window (measured from its
+  newest block), whether or not the sidecar has uploaded them; nothing
+  re-uploads them. `tests/drill_blob_outage.py` (2026-11-08, Docker Desktop)
+  saw the first unshipped block deleted 36.4 min into the outage at 1:10 scale,
+  about 6.1h at production timing. Deletion happens when a new block is cut,
+  so the real limit falls on a block boundary. That run did not reach Blob
+  recovery, so post-outage upload and Loki log survival remain unmeasured.
   Prometheus scrapes the sidecar and Compactor, and the dashboard shows the age
   of the last successful upload and failed uploads in the last hour. Alerting
   on these signals belongs to #75. Increase `retention.time` (and the disk
@@ -421,7 +423,7 @@ Prometheus loads every `*.yml` there).
 | `VMDiskSpaceLow` (critical) | root filesystem < 10% free for 15 min | `df -h /`, `docker system df`; never delete volumes, WAL or backups to recover |
 | `VMMemoryLow` (critical) | MemAvailable < 10% for 10 min | container memory panel; stop monitoring first (`systemctl stop vstore-monitoring.service`) |
 | `VMIOPressureHigh` (warning) | processes stalled on I/O > 20% of the time for 10 min | if monitoring is running, the watchdog stops it at the same level; otherwise the application is the cause |
-| `MetricsBlobUploadStale` (warning) | no successful block upload for 4 h (the first block ships about 3 h after start) | sidecar logs, Blob credential expiry (SAS until 2026-12-02); history older than ~5 h is lost if this lasts |
+| `MetricsBlobUploadStale` (warning) | no successful block upload for 4 h (the first block ships about 3 h after start) | sidecar logs, Blob credential expiry (SAS until 2026-12-02); unshipped history is lost after about 6 h |
 | `MetricsBlobUploadFailing` (warning) | any upload failure in the last hour | sidecar logs; Azure Blob availability and permissions |
 
 **Routing.** Alerts are grouped by name (first message after 30 s, updates every
@@ -520,6 +522,16 @@ Linux additionally requires named-container metrics. macOS uses a narrower mount
 override and explicitly reports the host/cgroup limitation. Synthetic fixture
 load and emulation are not production adoption, full seven-day wall-clock
 retention evidence, outage-buffer exhaustion evidence, or proof of #76 fit.
+
+The Blob outage drill measures the outage buffer separately. It uses the same
+venv and runs for about 1.5h at the default 1:10 scale:
+
+```sh
+/tmp/vstore-monitoring-test-venv/bin/python tests/drill_blob_outage.py --report /tmp/blob-outage-drill.json
+```
+
+It stops Azurite after the first block ships, tracks every local block until it
+is deleted, and reports lost block ranges with production-scale estimates.
 
 CI runs `tests/test_monitoring.py` and official Prometheus/Alloy/Loki validators
 without network access, host mounts or collector privileges. The full real-backend
