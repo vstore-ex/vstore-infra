@@ -1,0 +1,11 @@
+[Unit]
+Description=Check VStore monitoring pressure every minute
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=1min
+AccuracySec=10s
+Unit=vstore-monitoring-watchdog.service
+
+[Install]
+WantedBy=timers.target

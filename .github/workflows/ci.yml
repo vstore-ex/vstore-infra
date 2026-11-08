@@ -100,6 +100,8 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_monitoring*.py' -v
       - name: Run official validators without network or host collector privileges
         run: python3 tests/validate_monitoring.py
+      - name: Verify monitoring systemd units
+        run: systemd-analyze verify monitoring/systemd/*.slice monitoring/systemd/*.service monitoring/systemd/*.timer
 
   verify-offhost-recovery:
     name: Verify off-host replacement recovery
