@@ -17,7 +17,7 @@ class MonitoringGuardTests(unittest.TestCase):
                                 env={**os.environ, 'MONITORING_SECRETS_DIR': '/tmp/test-secrets'})
         self.assertEqual(result.returncode, 0, result.stderr)
         services = json.loads(result.stdout)['services']
-        self.assertEqual(len(services), 9)
+        self.assertEqual(len(services), 10)
         for name, service in services.items():
             self.assertEqual(service['cgroup_parent'], 'vstore-monitoring.slice', name)
             self.assertEqual(service['oom_score_adj'], 500, name)

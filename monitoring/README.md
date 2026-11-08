@@ -365,7 +365,86 @@ before that date: prepare a new private directory with the new connection
 string, then point `/etc/vstore-monitoring/service.env` at it. To disable: `sudo systemctl disable --now
 vstore-monitoring-watchdog.timer vstore-monitoring.service`.
 
-## Diagnosis and safe stop
+## Dashboards
+
+Grafana provisions every file under `grafana/dashboards/`, one folder per directory:
+
+| Folder | Dashboard | Shows |
+|---|---|---|
+| VStore | VStore overview | VM, containers, API and logs at a glance |
+| VStore | VStore application | API traffic, 5xx, latency by route, slowest routes, app containers, error-looking logs, firing alerts |
+| VStore | VStore monitoring health | monitoring memory against the slice budget, I/O pressure, scrape targets, Alloy/Prometheus/Loki ingestion, Thanos uploads, Blob operations and compaction, Alertmanager |
+| Community | Node Exporter Full (grafana.com 1860) | full host detail: CPU, memory, disks, network, pressure, kernel |
+| Community | cadvisor dashboard (19792) | per-container resources, selectable by Compose project and container |
+| Community | Prometheus 2.0 Overview (3662) | Prometheus internals |
+| Community | Alertmanager (9578) | alerts, notifications, silences |
+| Community | Logs / App (13639) | log search by `service` |
+
+Community dashboards are vendored at pinned revisions with SHA-256 checks by
+`scripts/grafana-dashboards.py import`. It rewrites them to the provisioned
+datasources, gives them stable uids and a link to their grafana.com page, drops
+panels that need Kubernetes metrics and adapts Logs / App to the `service` label.
+To update one, change its revision and hash in the script and rerun it; do not
+edit the vendored JSON by hand. Thanos / Overview (12937) was not used: its
+queries need Kubernetes pod metrics; the monitoring-health dashboard covers
+Thanos instead.
+
+To fill them, Alloy enables more node exporter collectors (uname, diskstats,
+vmstat, stat, filefd, sockstat, netstat, time, timex, entropy, processes,
+schedstat, softnet), keeps the Compose project/service labels on container
+metrics and scrapes itself; Prometheus also scrapes Thanos Store/Query, Loki and
+Grafana.
+
+The fixture (`tests/run_monitoring.py`) runs every panel query through Grafana
+(`tests/dashboard_queries.py`), prints coverage per dashboard and fails when a
+VStore panel has no data without a listed reason. Docker Desktop has no
+per-container cgroup metrics and an overlay root filesystem, so container and
+filesystem panels are only required on Linux. Some community panels stay empty
+by design on this VM (hardware sensors, kernel features not present, cluster
+mode).
+
+
+Prometheus evaluates `rules/vstore-alerts.yml` every 30 s and sends alerts to
+Alertmanager (in the slice, no published port; Grafana datasource "VStore
+Alerts"). Thresholds are **initial, tunable values** (#75); #65 has not fixed
+final ones. Rule behaviour is tested with `promtool test rules
+monitoring/rules-tests/vstore-alerts.test.yml` (kept outside `rules/`, because
+Prometheus loads every `*.yml` there).
+
+| Alert | Fires when | First checks |
+|---|---|---|
+| `VStoreApiDown` (critical) | `/health` probe fails for 2 min | `docker compose ps backend`, backend logs in Grafana (`service=backend`), `curl 127.0.0.1:8080/health` |
+| `VStoreApiHealthUnknown` (warning) | no probe result for 5 min | Alloy running? `VStoreScrapeFailing`? Unknown is never treated as healthy |
+| `VStoreScrapeFailing` (warning) | any target `up == 0` for 5 min | target named in `job`; for `api`, the metrics token and backend `/metrics` |
+| `VStoreHighErrorRate` (critical) | > 5% 5xx at > 0.1 req/s for 10 min | logs filtered by `request_id` of a failing request; recent deployment |
+| `VStoreSlowResponses` (warning) | API p95 > 1 s for 10 min | VM CPU/memory/I/O panels, PostgreSQL and Redis containers |
+| `VMDiskSpaceLow` (critical) | root filesystem < 10% free for 15 min | `df -h /`, `docker system df`; never delete volumes, WAL or backups to recover |
+| `VMMemoryLow` (critical) | MemAvailable < 10% for 10 min | container memory panel; stop monitoring first (`systemctl stop vstore-monitoring.service`) |
+| `VMIOPressureHigh` (warning) | processes stalled on I/O > 20% of the time for 10 min | if monitoring is running, the watchdog stops it at the same level; otherwise the application is the cause |
+| `MetricsBlobUploadStale` (warning) | no successful block upload for 4 h (the first block ships about 3 h after start) | sidecar logs, Blob credential expiry (SAS until 2026-12-02); history older than ~5 h is lost if this lasts |
+| `MetricsBlobUploadFailing` (warning) | any upload failure in the last hour | sidecar logs; Azure Blob availability and permissions |
+
+**Routing.** Alerts are grouped by name (first message after 30 s, updates every
+5 min), repeated every 4 h, or every 1 h for critical alerts. While
+`VStoreApiDown` fires, it suppresses the API's error-rate, latency and scrape
+alerts. Resolved messages are sent (`send_resolved: true`); REPORT-V2 listed
+recovery messages as a proposal, so disable them in `scripts/monitoring.py` if
+unwanted. `tests/smoke_alert_routing.py` proves grouping and suppression against
+a local webhook receiver in CI.
+
+**Delivery.** The repository config has no external recipient: alerts are
+visible in Alertmanager and Grafana only. To enable Telegram, set both
+`MONITORING_TELEGRAM_BOT_TOKEN` and `MONITORING_TELEGRAM_CHAT_ID` (numeric) when
+running `prepare`; it writes a private `alertmanager.yml` (0600) and points
+`MONITORING_ALERTMANAGER_CONFIG` at it. Setting only one fails. The message
+template is `alertmanager/telegram.tmpl`. Real delivery is a separately
+authorized test; do not put the token or chat ID in Git.
+
+**Limits.** Alerting runs on the same VM. When the VM, Docker or its network is
+down, nothing is evaluated or sent; a planned shutdown is therefore silent, and
+every `for:` window restarts after boot. Detecting a whole-VM outage needs an
+external check, which is a separate decision.
+
 
 ### Controlled production trial, 2026-11-02
 

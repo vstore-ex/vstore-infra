@@ -100,6 +100,15 @@ def main():
     # Upload/retention health must be observable before a Blob outage loses blocks.
     eventually(lambda: series('up{job="thanos-sidecar"} == 1'))
     eventually(lambda: series('up{job="thanos-compact"} == 1'))
+    # Alerting (#75): Alertmanager is scraped, rules are loaded, I/O pressure exists.
+    eventually(lambda: series('up{job="alertmanager"} == 1'))
+    eventually(lambda: series('node_pressure_io_waiting_seconds_total{job="host"}'))
+    rules = eventually(lambda: [
+        rule["name"]
+        for group in get(address("prometheus", 9090) + "/api/v1/rules")["data"]["groups"]
+        for rule in group["rules"]
+    ])
+    assert len(rules) == 10 and "VStoreApiDown" in rules, rules
     if sys.platform == "linux":
         eventually(
             lambda: series(
@@ -213,6 +222,26 @@ def main():
         + urllib.parse.urlencode({"query": failures["targets"][0]["expr"]})
     )
     eventually(lambda: grafana(path)["data"]["result"])
+    # Every provisioned dashboard (#dashboards): VStore panels must return data,
+    # community coverage is reported.
+    import dashboard_queries
+    latest = {}
+
+    def complete():
+        latest["report"] = report = dashboard_queries.coverage(grafana)
+        gaps = {k: v for k, v in dashboard_queries.unexpected_empty(report, sys.platform == "linux").items() if v}
+        return len(report) >= 8 and not gaps
+
+    try:
+        eventually(complete, 240)
+    except AssertionError:
+        pass  # report the remaining gaps below
+    report = latest["report"]
+    print(dashboard_queries.summarize(report))
+    missing = {k: v for k, v in dashboard_queries.unexpected_empty(report, sys.platform == "linux").items() if v}
+    if sys.platform != "linux":
+        print("LIMITATION: container panels are checked on Linux only")
+    assert not missing, f"VStore panels without data: {missing}"
     expr = urllib.parse.urlencode({"query": 'vstore_http_requests_total{job="api"}'})
     assert grafana("/api/datasources/proxy/uid/vstore-metrics/api/v1/query?" + expr)[
         "data"

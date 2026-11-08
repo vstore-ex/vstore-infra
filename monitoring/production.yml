@@ -13,3 +13,4 @@ services:
   loki: {<<: *guard}
   alloy: {<<: *guard}
   grafana: {<<: *guard}
+  alertmanager: {<<: *guard}

@@ -1,0 +1,772 @@
+{
+  "id": null,
+  "uid": "vstore-monitoring-health",
+  "title": "VStore monitoring health",
+  "description": "Is monitoring itself healthy, within budget and shipping history to Blob?",
+  "tags": [
+    "vstore"
+  ],
+  "timezone": "utc",
+  "schemaVersion": 42,
+  "version": 1,
+  "editable": false,
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Budget and host impact",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Monitoring memory (all containers) vs slice budget",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vstore-metrics"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "sum(container_memory_working_set_bytes{container_label_com_docker_compose_project=\"vstore-monitoring\"})",
+          "legendFormat": "working set",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vstore-metrics"
+          }
+        },
+        {
+          "expr": "1280 * 1024 * 1024",
+          "legendFormat": "reclaim starts (MemoryHigh)",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vstore-metrics"
+          }
+        },
+        {
+          "expr": "1536 * 1024 * 1024",
+          "legendFormat": "hard limit (MemoryMax)",
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vstore-metrics"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "noValue": "No data (unknown)"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "description": "The slice in monitoring/systemd/vstore-monitoring.slice. On 2026-11-07 a 768 MiB limit thrashed the host."
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Host I/O pressure (watchdog stops monitoring above 20%)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vstore-metrics"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 1,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "rate(node_pressure_io_waiting_seconds_total{job=\"host\"}[5m])",
+          "legendFormat": "I/O some",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vstore-metrics"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "noValue": "No data (unknown)",
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.2
+              }
+            ]
+          },
+          "custom": {
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Memory by monitoring service",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vstore-metrics"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 9,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "sum by (container_label_com_docker_compose_service) (container_memory_working_set_bytes{container_label_com_docker_compose_project=\"vstore-monitoring\"})",
+          "legendFormat": "{{container_label_com_docker_compose_service}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vstore-metrics"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "noValue": "No data (unknown)"
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "CPU by monitoring service",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vstore-metrics"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 9,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "sum by (container_label_com_docker_compose_service) (rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_project=\"vstore-monitoring\"}[5m]))",
+          "legendFormat": "{{container_label_com_docker_compose_service}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vstore-metrics"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data (unknown)"
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 6,
+      "type": "row",
+      "title": "Collection",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 17,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 7,
+      "type": "table",
+      "title": "Scrape targets",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vstore-metrics"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 18,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "up",
+          "instant": true,
+          "format": "table",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vstore-metrics"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data (unknown)",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "DOWN",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "UP",
+                  "color": "green"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {},
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Alloy remote write: samples sent vs failed",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vstore-metrics"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 18,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(prometheus_remote_storage_samples_total[5m]))",
+          "legendFormat": "sent",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vstore-metrics"
+          }
+        },
+        {
+          "expr": "sum(rate(prometheus_remote_storage_samples_failed_total[5m]))",
+          "legendFormat": "failed",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vstore-metrics"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data (unknown)"
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Prometheus head series and ingestion",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vstore-metrics"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 26,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "prometheus_tsdb_head_series",
+          "legendFormat": "head series",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vstore-metrics"
+          }
+        },
+        {
+          "expr": "rate(prometheus_tsdb_head_samples_appended_total[5m])",
+          "legendFormat": "samples/s",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vstore-metrics"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data (unknown)"
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Loki ingestion",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vstore-metrics"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 26,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(loki_distributor_lines_received_total[5m]))",
+          "legendFormat": "lines/s",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vstore-metrics"
+          }
+        },
+        {
+          "expr": "sum(rate(loki_distributor_bytes_received_total[5m]))",
+          "legendFormat": "bytes/s",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vstore-metrics"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data (unknown)"
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 11,
+      "type": "row",
+      "title": "History in Azure Blob (Thanos)",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 34,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 12,
+      "type": "stat",
+      "title": "Since last metric block upload",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vstore-metrics"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 35,
+        "w": 6,
+        "h": 5
+      },
+      "targets": [
+        {
+          "expr": "time() - max(thanos_objstore_bucket_last_successful_upload_time{job=\"thanos-sidecar\"} > 0)",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vstore-metrics"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "No data (unknown)",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 10800
+              },
+              {
+                "color": "red",
+                "value": 14400
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {},
+      "description": "No data until the first upload, about 3 h after start."
+    },
+    {
+      "id": 13,
+      "type": "stat",
+      "title": "Upload failures (1h)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vstore-metrics"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 35,
+        "w": 6,
+        "h": 5
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(thanos_shipper_upload_failures_total{job=\"thanos-sidecar\"}[1h]))",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vstore-metrics"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data (unknown)",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 14,
+      "type": "stat",
+      "title": "Blocks served from Blob",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vstore-metrics"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 35,
+        "w": 6,
+        "h": 5
+      },
+      "targets": [
+        {
+          "expr": "sum(thanos_bucket_store_blocks_loaded{job=\"thanos-store\"})",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vstore-metrics"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data (unknown)"
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 15,
+      "type": "stat",
+      "title": "Compactor halted",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vstore-metrics"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 35,
+        "w": 6,
+        "h": 5
+      },
+      "targets": [
+        {
+          "expr": "max(thanos_compact_halted{job=\"thanos-compact\"})",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vstore-metrics"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data (unknown)",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "OK",
+                  "color": "green"
+                },
+                "1": {
+                  "text": "HALTED",
+                  "color": "red"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "Blob operations per second",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vstore-metrics"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 40,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "sum by (job, operation) (rate(thanos_objstore_bucket_operations_total[5m]))",
+          "legendFormat": "{{job}} {{operation}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vstore-metrics"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data (unknown)"
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 17,
+      "type": "timeseries",
+      "title": "Blob operation failures per second",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vstore-metrics"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 40,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "sum by (job, operation) (rate(thanos_objstore_bucket_operation_failures_total[5m]))",
+          "legendFormat": "{{job}} {{operation}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vstore-metrics"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data (unknown)"
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 18,
+      "type": "row",
+      "title": "Alerting",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 48,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 19,
+      "type": "timeseries",
+      "title": "Alertmanager notifications",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vstore-metrics"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 49,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "sum by (integration) (rate(alertmanager_notifications_total[5m]))",
+          "legendFormat": "sent {{integration}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vstore-metrics"
+          }
+        },
+        {
+          "expr": "sum by (integration) (rate(alertmanager_notifications_failed_total[5m]))",
+          "legendFormat": "failed {{integration}}",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vstore-metrics"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data (unknown)"
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "Rule evaluation failures",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vstore-metrics"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 49,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(prometheus_rule_evaluation_failures_total[5m]))",
+          "legendFormat": "failures/s",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vstore-metrics"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data (unknown)"
+        },
+        "overrides": []
+      },
+      "options": {}
+    }
+  ],
+  "templating": {
+    "list": []
+  },
+  "links": [
+    {
+      "title": "Dashboards",
+      "type": "dashboards",
+      "tags": [
+        "vstore"
+      ],
+      "asDropdown": true
+    }
+  ]
+}

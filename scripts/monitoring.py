@@ -11,6 +11,28 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def telegram_alertmanager():
+    """Private Alertmanager config with a Telegram receiver, or None when not configured."""
+    token = os.environ.get("MONITORING_TELEGRAM_BOT_TOKEN", "")
+    chat = os.environ.get("MONITORING_TELEGRAM_CHAT_ID", "")
+    if not token and not chat:
+        return None
+    if not re.fullmatch(r"\d+:[A-Za-z0-9_-]+", token) or not re.fullmatch(r"-?\d+", chat):
+        raise ValueError("Set both MONITORING_TELEGRAM_BOT_TOKEN and a numeric MONITORING_TELEGRAM_CHAT_ID, or neither")
+    base = (ROOT / "monitoring/alertmanager/alertmanager.yml").read_text()
+    marker = "receivers:\n  - name: default\n"
+    if not base.endswith(marker):
+        raise ValueError("Unexpected repository Alertmanager config layout")
+    return base + (
+        "    telegram_configs:\n"
+        f"      - bot_token: {json.dumps(token)}\n"
+        f"        chat_id: {chat}\n"
+        "        parse_mode: HTML\n"
+        "        send_resolved: true\n"
+        "        message: '{{ template \"vstore.telegram\" . }}'\n"
+    )
+
+
 def prepare(directory):
     keys = (
         "METRICS_TOKEN",
@@ -85,13 +107,18 @@ def prepare(directory):
         + "\n"
     )
     thanos += "  container: " + json.dumps(metrics) + "\n"
+    compose_env = f"MONITORING_SECRETS_DIR={json.dumps(str(path))}\nMONITORING_UID={os.getuid()}\nMONITORING_GID={os.getgid()}\n"
     files = {
         "metrics-token": values["METRICS_TOKEN"],
         "grafana-password": values["MONITORING_GRAFANA_PASSWORD"],
         "loki.yml": loki,
         "thanos.yml": thanos,
-        "compose.env": f"MONITORING_SECRETS_DIR={json.dumps(str(path))}\nMONITORING_UID={os.getuid()}\nMONITORING_GID={os.getgid()}\n",
     }
+    alertmanager = telegram_alertmanager()
+    if alertmanager:
+        files["alertmanager.yml"] = alertmanager
+        compose_env += f"MONITORING_ALERTMANAGER_CONFIG={json.dumps(str(path / 'alertmanager.yml'))}\n"
+    files["compose.env"] = compose_env
     path.mkdir(mode=0o700)
     for name, value in files.items():
         fd = os.open(path / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)

@@ -10,8 +10,8 @@
     "to": "now"
   },
   "tags": [
-    "vstore",
-    "observability"
+    "observability",
+    "vstore"
   ],
   "description": "Colocated on VM: no UI/alerts during whole-host outage. No fresh data means unknown. Docker Desktop test signals describe its Linux VM/container namespace, not the physical Mac. Metric history is queried through Thanos; logs through Loki Azure storage.",
   "panels": [
@@ -569,5 +569,15 @@
         "sort": 1
       }
     ]
-  }
+  },
+  "links": [
+    {
+      "title": "Dashboards",
+      "type": "dashboards",
+      "tags": [
+        "vstore"
+      ],
+      "asDropdown": true
+    }
+  ]
 }

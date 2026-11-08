@@ -1,0 +1,26 @@
+# Default routing with no external recipients: alerts are visible in
+# Alertmanager and Grafana only. `scripts/monitoring.py prepare` writes a private
+# copy with a Telegram receiver when MONITORING_TELEGRAM_BOT_TOKEN and
+# MONITORING_TELEGRAM_CHAT_ID are both set.
+global:
+  resolve_timeout: 5m
+templates:
+  - /etc/alertmanager/templates/*.tmpl
+route:
+  receiver: default
+  group_by: [alertname]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - matchers: [severity="critical"]
+      receiver: default
+      repeat_interval: 1h
+inhibit_rules:
+  # While the API is down, its error, latency and scrape alerts add no information.
+  - source_matchers: [alertname="VStoreApiDown"]
+    target_matchers: [alertname=~"VStoreHighErrorRate|VStoreSlowResponses"]
+  - source_matchers: [alertname="VStoreApiDown"]
+    target_matchers: [alertname="VStoreScrapeFailing", job="api"]
+receivers:
+  - name: default
