@@ -74,6 +74,10 @@ if [[ $action == install-service ]]; then
   private_dir=$(dirname -- "$private_env")
   [[ $(stat -c '%a' "$private_env") == 600 && $(stat -c '%a' "$private_dir") == 700 ]] || { echo 'Private env file must be 0600 in a 0700 directory' >&2; exit 1; }
   (( $(stat -c '%u' "$private_env") != 0 )) || { echo 'Private configuration must belong to the unprivileged monitoring owner' >&2; exit 1; }
+  owner=$(stat -c '%U' "$private_env")
+  # The service runs Docker Compose as this user (root may have no compose plugin).
+  id -nG "$owner" | tr ' ' '\n' | grep -qx docker || { echo "$owner must be in the docker group" >&2; exit 1; }
+  sudo -u "$owner" docker compose version >/dev/null || { echo "docker compose is not available to $owner" >&2; exit 1; }
   grep -qxF "MONITORING_SECRETS_DIR=\"$private_dir\"" "$private_env" || { echo 'compose.env does not point at its own directory' >&2; exit 1; }
   wanted=$(printf 'VSTORE_DEPLOY_PATH=%s\nMONITORING_ENV_FILE=%s\n' "$root" "$private_env")
   if [[ -e $service_env || -L $service_env ]]; then
@@ -90,6 +94,14 @@ if [[ $action == install-service ]]; then
       install -m 0644 "$root/monitoring/systemd/$name" "$target"
     fi
   done
+  dropin=/etc/systemd/system/vstore-monitoring.service.d/owner.conf
+  wanted_dropin=$(printf '[Service]\nUser=%s\nGroup=%s\n' "$owner" "$(id -gn "$owner")")
+  if [[ -e $dropin || -L $dropin ]]; then
+    [[ ! -L $dropin && $(cat "$dropin") == "$wanted_dropin" ]] || { echo "Existing $dropin differs; review and remove it first" >&2; exit 1; }
+  else
+    install -d -m 0755 "$(dirname -- "$dropin")"
+    printf '%s\n' "$wanted_dropin" > "$dropin.tmp" && chmod 0644 "$dropin.tmp" && mv "$dropin.tmp" "$dropin"
+  fi
   systemctl daemon-reload
   # Enabled for the next boot only; starting now is a separate, explicit step.
   systemctl enable vstore-monitoring.service vstore-monitoring-watchdog.timer
