@@ -1,0 +1,111 @@
+# Initial, tunable thresholds (#75). #65 has not fixed final values; see
+# monitoring/README.md#alert-runbook for each alert's meaning and first checks.
+# Planned VM shutdown is not an incident: nothing is evaluated while the VM is
+# off, and every `for:` window restarts after boot.
+groups:
+  - name: vstore-application
+    rules:
+      - alert: VStoreApiDown
+        expr: probe_success{job="api-health"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: VStore API health probe is failing
+          runbook: monitoring/README.md#alert-runbook
+
+      # Missing data is unknown, never healthy.
+      - alert: VStoreApiHealthUnknown
+        expr: absent(probe_success{job="api-health"})
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: No API health probe results; API state is unknown, not healthy
+          runbook: monitoring/README.md#alert-runbook
+
+      - alert: VStoreScrapeFailing
+        expr: up == 0
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: A monitoring scrape target is failing
+          runbook: monitoring/README.md#alert-runbook
+
+      # Needs at least 0.1 requests/s so that single errors on an idle store
+      # do not page.
+      - alert: VStoreHighErrorRate
+        expr: |
+          (
+            sum(rate(vstore_http_requests_total{job="api",status=~"5.."}[5m]))
+              / sum(rate(vstore_http_requests_total{job="api"}[5m]))
+          ) > 0.05
+          and sum(rate(vstore_http_requests_total{job="api"}[5m])) > 0.1
+        for: 10m
+        labels: {severity: critical}
+        annotations:
+          summary: More than 5% of API requests fail with 5xx
+          runbook: monitoring/README.md#alert-runbook
+
+      - alert: VStoreSlowResponses
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(vstore_http_request_duration_seconds_bucket{job="api"}[5m]))
+          ) > 1
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: API p95 latency is above 1 second
+          runbook: monitoring/README.md#alert-runbook
+
+  - name: vstore-host
+    rules:
+      - alert: VMDiskSpaceLow
+        expr: |
+          node_filesystem_avail_bytes{job="host",mountpoint="/"}
+            / node_filesystem_size_bytes{job="host",mountpoint="/"} < 0.10
+        for: 15m
+        labels: {severity: critical}
+        annotations:
+          summary: VM root filesystem has less than 10% free space
+          runbook: monitoring/README.md#alert-runbook
+
+      - alert: VMMemoryLow
+        expr: node_memory_MemAvailable_bytes{job="host"} / node_memory_MemTotal_bytes{job="host"} < 0.10
+        for: 10m
+        labels: {severity: critical}
+        annotations:
+          summary: VM has less than 10% memory available
+          runbook: monitoring/README.md#alert-runbook
+
+      # Same 20% limit as the monitoring watchdog (#80); this alert also covers
+      # pressure caused by the application.
+      - alert: VMIOPressureHigh
+        expr: rate(node_pressure_io_waiting_seconds_total{job="host"}[5m]) > 0.20
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: VM processes are stalled on disk I/O more than 20% of the time
+          runbook: monitoring/README.md#alert-runbook
+
+  - name: vstore-history
+    rules:
+      # The upload time gauge is per sidecar process and 0 until its first
+      # upload, so a VM that was off for days does not look stale after boot.
+      # The first 2 h block normally ships about 3 h after start.
+      - alert: MetricsBlobUploadStale
+        expr: |
+          time() - (
+            max(thanos_objstore_bucket_last_successful_upload_time{job="thanos-sidecar"} > 0)
+            or max(process_start_time_seconds{job="thanos-sidecar"})
+          ) > 4 * 3600
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: No metric block reached Azure Blob for over 4 hours
+          runbook: monitoring/README.md#alert-runbook
+
+      - alert: MetricsBlobUploadFailing
+        expr: increase(thanos_shipper_upload_failures_total{job="thanos-sidecar"}[1h]) > 0
+        labels: {severity: warning}
+        annotations:
+          summary: Metric block uploads to Azure Blob are failing
+          runbook: monitoring/README.md#alert-runbook

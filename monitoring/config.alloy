@@ -1,0 +1,126 @@
+logging {
+  level = "warn"
+}
+prometheus.remote_write "local" {
+  endpoint {
+    url = sys.env("MONITORING_PROMETHEUS_URL")
+    queue_config {
+      capacity = 2000
+      max_shards = 2
+    }
+  }
+  wal {
+    min_keepalive_time = "5m"
+    max_keepalive_time = "30m"
+  }
+}
+prometheus.exporter.unix "host" {
+  procfs_path = "/host/proc"
+  sysfs_path = "/sys"
+  rootfs_path = "/rootfs"
+  enable_collectors = ["cpu", "meminfo", "filesystem", "netdev", "loadavg", "pressure", "uname", "diskstats", "vmstat", "stat", "filefd", "sockstat", "netstat", "time", "timex", "entropy", "processes", "schedstat", "softnet"]
+  set_collectors = ["cpu", "meminfo", "filesystem", "netdev", "loadavg", "pressure", "uname", "diskstats", "vmstat", "stat", "filefd", "sockstat", "netstat", "time", "timex", "entropy", "processes", "schedstat", "softnet"]
+}
+prometheus.scrape "host" {
+  targets = discovery.relabel.host_targets.output
+  forward_to = [prometheus.remote_write.local.receiver]
+  scrape_interval = "30s"
+  job_name = "host"
+}
+prometheus.exporter.cadvisor "containers" {
+  containerd_host = "/run/containerd/containerd.sock"
+  containerd_namespace = "moby"
+  docker_only = true
+  store_container_labels = false
+  // Only the Compose project/service labels, for per-service dashboards.
+  allowlisted_container_labels = ["com.docker.compose.project", "com.docker.compose.service"]
+  storage_duration = "1m"
+}
+prometheus.scrape "containers" {
+  targets = discovery.relabel.containers_targets.output
+  forward_to = [prometheus.remote_write.local.receiver]
+  scrape_interval = "30s"
+  job_name = "containers"
+}
+prometheus.scrape "api" {
+  targets = [{"__address__" = sys.env("MONITORING_API_ADDRESS")}]
+  metrics_path = "/metrics"
+  bearer_token_file = "/run/secrets/metrics-token"
+  forward_to = [prometheus.remote_write.local.receiver]
+  scrape_interval = "30s"
+  job_name = "api"
+}
+prometheus.exporter.blackbox "api" {
+  config = "modules: {http_ok: {prober: http, timeout: 5s, http: {preferred_ip_protocol: ip4}}}"
+  target {
+    name = "health"
+    address = "http://" + sys.env("MONITORING_API_ADDRESS") + "/health"
+    module = "http_ok"
+  }
+}
+prometheus.scrape "health" {
+  targets = discovery.relabel.health_targets.output
+  forward_to = [prometheus.remote_write.local.receiver]
+  scrape_interval = "30s"
+  job_name = "api-health"
+}
+discovery.docker "application" {
+  host = "unix:///var/run/docker.sock"
+  refresh_interval = "15s"
+  filter {
+    name = "label"
+    values = ["com.docker.compose.project=" + sys.env("VSTORE_COMPOSE_PROJECT")]
+  }
+}
+discovery.relabel "logs" {
+  targets = discovery.docker.application.targets
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label = "service"
+  }
+}
+loki.source.docker "application" {
+  host = "unix:///var/run/docker.sock"
+  targets = discovery.relabel.logs.output
+  forward_to = [loki.write.local.receiver]
+}
+loki.write "local" {
+  endpoint {
+    url = sys.env("MONITORING_LOKI_URL")
+    batch_size = "1MiB"
+    min_backoff_period = "500ms"
+    max_backoff_period = "30s"
+    max_backoff_retries = 8
+  }
+}
+discovery.relabel "host_targets" {
+  targets = prometheus.exporter.unix.host.targets
+  rule {
+    target_label = "job"
+    replacement = "host"
+  }
+}
+discovery.relabel "containers_targets" {
+  targets = prometheus.exporter.cadvisor.containers.targets
+  rule {
+    target_label = "job"
+    replacement = "containers"
+  }
+}
+discovery.relabel "health_targets" {
+  targets = prometheus.exporter.blackbox.api.targets
+  rule {
+    target_label = "job"
+    replacement = "api-health"
+  }
+}
+
+// Alloy's own health (remote write queues, component errors) for the
+// monitoring-health dashboard.
+prometheus.exporter.self "alloy" {}
+prometheus.scrape "alloy" {
+  targets = prometheus.exporter.self.alloy.targets
+  forward_to = [prometheus.remote_write.local.receiver]
+  scrape_interval = "30s"
+  job_name = "alloy"
+}

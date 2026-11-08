@@ -1,0 +1,39 @@
+services:
+  backend:
+    image: vstore-observability-api:local
+    build:
+      context: ${OBS_BACKEND_CONTEXT:?set isolated backend source directory}
+      dockerfile: ${OBS_FIXTURE_DOCKERFILE:?set fixture Dockerfile}
+    environment:
+      METRICS_TOKEN: local-test-only-token
+      SECRET_KEY: local-test-only-secret
+      DATABASE_URL: sqlite:///
+      RATE_LIMIT_ENABLED: "false"
+      CELERY_BROKER_URL: redis://127.0.0.1:6379/0
+    expose: [8000]
+    ports: ["127.0.0.1::8000"]
+    networks: [application]
+    logging:
+      driver: json-file
+      options: {max-size: "5m", max-file: "2"}
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:3.35.0
+    command: [azurite-blob, --blobHost, 0.0.0.0, --skipApiVersionCheck, --location, /data]
+    environment:
+      AZURITE_ACCOUNTS: ${OBS_AZURITE_ACCOUNTS:?local emulator credentials}
+    volumes: ["azurite:/data"]
+    ports: ["127.0.0.1::10000"]
+    networks: [monitoring]
+  query:
+    ports: ["127.0.0.1::10902"]
+  store:
+    ports: ["127.0.0.1::10902"]
+  alloy:
+    environment:
+      VSTORE_COMPOSE_PROJECT: ${COMPOSE_PROJECT_NAME:?isolated smoke project}
+networks:
+  application:
+    external: false
+    name: ${COMPOSE_PROJECT_NAME:?isolated smoke project}_app
+volumes:
+  azurite: {}

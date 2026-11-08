@@ -1,0 +1,23 @@
+[Unit]
+Description=VStore opt-in monitoring stack
+Documentation=https://github.com/vstore-ex/vstore-infra/blob/main/monitoring/README.md
+Requires=docker.service vstore-monitoring.slice
+After=docker.service network-online.target vstore-monitoring.slice
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# Non-secret paths written by `monitoring-guard.sh install-service`.
+EnvironmentFile=/etc/vstore-monitoring/service.env
+# Runs as the private configuration's owner (drop-in owner.conf from
+# install-service): that user has Docker Compose and owns the secrets.
+RuntimeDirectory=vstore-monitoring
+RuntimeDirectoryPreserve=yes
+ExecStart=/bin/bash ${VSTORE_DEPLOY_PATH}/scripts/monitoring-service.sh start
+ExecStop=/bin/bash ${VSTORE_DEPLOY_PATH}/scripts/monitoring-service.sh stop
+TimeoutStartSec=900
+TimeoutStopSec=180
+
+[Install]
+WantedBy=multi-user.target

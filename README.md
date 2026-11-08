@@ -174,7 +174,22 @@ Off-host recovery bundles use encrypted restic in a dedicated private Azure cont
 
 Compose forwards the exact `EDGE_PROXY_IP` to the storefront/admin Nginx
 runtime templates. Each app accepts the forwarded scheme only from this peer;
-direct requests retain their local scheme. Deploy this configuration before the
-companion application images when using a customized proxy network. The app
-images default to the standard edge address, so rollout on the default network
-is compatible in either order.
+direct requests retain their local scheme. The companion storefront/admin
+images (vstore-front#111, vstore-admin#20) default to the standard edge address,
+so the default network works with or without this variable; a customized proxy
+network needs it.
+
+### Validated infrastructure revisions
+
+Infrastructure deployment forwards the workflow's full `github.sha` over SSH.
+Under the shared deployment lock it fetches main and rejects obsolete runs before
+changing the checkout or containers. Dispatch the current main revision after a
+newer commit supersedes a waiting run. Successful deployment logs record the
+validated/applied SHA; failure recovery keeps the previous configuration and image
+rollback path.
+
+## Opt-in observability
+
+See [monitoring/README.md](monitoring/README.md) for the separate private stack,
+Blob-backed metrics/logs, collector privilege exception, fixture verification and
+production-adoption gates. Standard application deployments do not start it.

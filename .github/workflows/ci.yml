@@ -55,6 +55,9 @@ jobs:
       - name: Verify release state and deployment failure handling
         run: python3 -m unittest discover -s tests -p 'test_release_state.py' -v
 
+      - name: Verify validated infrastructure revision and obsolete runs
+        run: python3 -m unittest discover -s tests -p 'test_infra_revision.py' -v
+
       - name: Verify isolated deployment and rollback across fresh sessions
         run: python3 tests/smoke_release_state.py
 
@@ -85,6 +88,22 @@ jobs:
       - name: Execute Edge Gateway & TLS automation tests
         run: python3 -m unittest tests/test_gateway.py -v
 
+
+  validate-monitoring:
+    name: Validate opt-in monitoring
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Verify private ports and fail-closed preparation
+        run: python3 -m unittest discover -s tests -p 'test_monitoring*.py' -v
+      - name: Run official validators without network or host collector privileges
+        run: python3 tests/validate_monitoring.py
+      - name: Prove alert grouping and inhibition against a local receiver
+        run: python3 tests/smoke_alert_routing.py
+      - name: Verify monitoring systemd units
+        run: systemd-analyze verify monitoring/systemd/*.slice monitoring/systemd/*.service monitoring/systemd/*.timer
 
   verify-offhost-recovery:
     name: Verify off-host replacement recovery
@@ -251,8 +270,9 @@ jobs:
         uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17 # v1.2.0
         env:
           EDGE_IMAGE: ${{ needs.build-proxy.outputs.image }}
+          DEPLOY_SHA: ${{ github.sha }}
         with:
-          envs: EDGE_IMAGE
+          envs: EDGE_IMAGE,DEPLOY_SHA
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY || secrets.SSH_PRIVATE_KEY }}
@@ -279,10 +299,22 @@ jobs:
             PREV_GIT_COMMIT=$(git rev-parse HEAD 2>/dev/null || true)
             echo "==> Pre-deploy commit: ${PREV_GIT_COMMIT:-none}"
 
-            echo "==> Synchronizing repository state from origin/main..."
+            # Reject obsolete runs under the deployment lock before changing config.
+            # A newer main requires its own successful validation and edge scan.
+            if ! [[ "${DEPLOY_SHA:-}" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "ERROR: DEPLOY_SHA must be the full validated commit SHA."
+              exit 1
+            fi
+            git fetch origin refs/heads/main:refs/remotes/origin/main
+            if [ "$DEPLOY_SHA" != "$(git rev-parse refs/remotes/origin/main)" ]; then
+              echo "ERROR: Obsolete infrastructure run; dispatch the current main commit."
+              exit 1
+            fi
+            echo "==> Applying validated infrastructure commit: $DEPLOY_SHA"
             # Tracked Nginx mounts must stay readable without DAC_OVERRIDE.
-            # The private deployment parent protects the clone on the host.
-            (umask 022; git fetch origin main; git reset --hard origin/main)
+            (umask 022; git reset --hard "$DEPLOY_SHA")
+            test "$(git rev-parse HEAD)" = "$DEPLOY_SHA"
+            echo "==> Checked-out infrastructure commit: $(git rev-parse HEAD)"
 
             # Adopt healthy running digests once, then ignore stale .env image pins.
             python3 scripts/secure-deployment.py
@@ -346,4 +378,7 @@ jobs:
               exit 1
             fi
 
-            echo "==> Infra stack config applied successfully."
+            echo "==> Infra stack config applied successfully at $DEPLOY_SHA."
+
+            # Opt-in monitoring follows the deployed config; it never fails the deployment.
+            bash scripts/monitoring-deploy.sh "$PREV_GIT_COMMIT" "$DEPLOY_SHA" || echo "::warning::Monitoring update step failed; the application deployment is unaffected."
