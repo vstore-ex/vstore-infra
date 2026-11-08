@@ -185,3 +185,34 @@ tests:
             exp_annotations:
               summary: Metric block uploads to Azure Blob are failing
               runbook: monitoring/README.md#alert-runbook
+
+  # Datastores (#74): down after 5 minutes of *_up == 0; a missing signal is not healthy.
+  - interval: 1m
+    input_series:
+      - series: 'pg_up{job="postgres",instance="postgres"}'
+        values: '1 1 0 0 0 0 0 0 0'
+      - series: 'redis_up{job="redis",instance="redis"}'
+        values: '1x9'
+    alert_rule_test:
+      - {eval_time: 5m, alertname: VStorePostgresDown, exp_alerts: []}
+      - eval_time: 8m
+        alertname: VStorePostgresDown
+        exp_alerts:
+          - exp_labels: {severity: critical, job: postgres, instance: postgres}
+            exp_annotations:
+              summary: PostgreSQL is unreachable from the exporter, or no PostgreSQL signal exists
+              runbook: monitoring/README.md#alert-runbook
+      - {eval_time: 8m, alertname: VStoreRedisDown, exp_alerts: []}
+
+  - interval: 1m
+    input_series:
+      - series: 'up{job="host"}'
+        values: '1x10'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: VStoreRedisDown
+        exp_alerts:
+          - exp_labels: {severity: critical, job: redis}
+            exp_annotations:
+              summary: Redis is unreachable from the exporter, or no Redis signal exists
+              runbook: monitoring/README.md#alert-runbook

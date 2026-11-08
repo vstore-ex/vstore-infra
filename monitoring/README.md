@@ -61,7 +61,20 @@ on production merely because configuration/CI passes.
    roots; Alloy's state directory belongs to root. It never chmods/chowns app data.
    Existing configuration is refused, making rotation an explicit new directory.
 4. Append `VSTORE_COMPOSE_PROJECT` to that private
-   `compose.env` if your app project differs from `vstore`. Set `MONITORING_API_ADDRESS` if the loopback backend binding differs.
+   `compose.env` if your app project differs from `vstore`. Set `MONITORING_API_ADDRESS` if the loopback backend binding differs,
+   and `MONITORING_REDIS_ADDRESS` if Redis is not on `127.0.0.1:6379`.
+   **PostgreSQL signals** need a dedicated read-only role. Create it once as the
+   database owner (choose the password with `openssl rand -hex 32`; never commit it):
+
+   ```sql
+   CREATE ROLE vstore_monitor LOGIN PASSWORD '<generated>' CONNECTION LIMIT 3;
+   GRANT pg_monitor TO vstore_monitor;
+   ```
+
+   Then pass `MONITORING_POSTGRES_DSN=postgresql://vstore_monitor:<generated>@127.0.0.1:5432/app?sslmode=disable`
+   to `prepare`. It is stored as the private `postgres-dsn` file and never printed;
+   the `postgres` superuser is refused. Without a DSN, `prepare` writes a placeholder
+   that reports `pg_up 0`, so `VStorePostgresDown` shows the signal as missing.
    Host collector URLs and port overrides are listed in `.env.example`.
 5. After approval, use a unique monitoring project and the private env file:
 
@@ -415,6 +428,8 @@ Prometheus loads every `*.yml` there).
 |---|---|---|
 | `VStoreApiDown` (critical) | `/health` probe fails for 2 min | `docker compose ps backend`, backend logs in Grafana (`service=backend`), `curl 127.0.0.1:8080/health` |
 | `VStoreApiHealthUnknown` (warning) | no probe result for 5 min | Alloy running? `VStoreScrapeFailing`? Unknown is never treated as healthy |
+| `VStorePostgresDown` (critical) | exporter reports `pg_up == 0`, or no `pg_up` at all, for 5 min | `docker compose ps postgres`; if PostgreSQL is healthy, the `postgres-dsn` secret or the `vstore_monitor` role |
+| `VStoreRedisDown` (critical) | exporter reports `redis_up == 0`, or no `redis_up` at all, for 5 min | `docker compose ps redis`, `redis-cli -h 127.0.0.1 ping`; `MONITORING_REDIS_ADDRESS` |
 | `VStoreScrapeFailing` (warning) | any target `up == 0` for 5 min | target named in `job`; for `api`, the metrics token and backend `/metrics` |
 | `VStoreHighErrorRate` (critical) | > 5% 5xx at > 0.1 req/s for 10 min | logs filtered by `request_id` of a failing request; recent deployment |
 | `VStoreSlowResponses` (warning) | API p95 > 1 s for 10 min | VM CPU/memory/I/O panels, PostgreSQL and Redis containers |

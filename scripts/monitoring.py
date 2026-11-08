@@ -33,6 +33,23 @@ def telegram_alertmanager():
     )
 
 
+# Without a DSN the exporter dials a closed port and reports pg_up 0, which the
+# VStorePostgresDown alert treats as missing rather than healthy.
+POSTGRES_PLACEHOLDER = "postgresql://monitoring-not-configured@127.0.0.1:1/postgres?sslmode=disable"
+
+
+def postgres_dsn():
+    dsn = os.environ.get("MONITORING_POSTGRES_DSN", "")
+    if not dsn:
+        return POSTGRES_PLACEHOLDER
+    match = re.fullmatch(r"postgres(?:ql)?://([A-Za-z0-9_]+):[^@\s]+@[A-Za-z0-9.\-]+:\d+/[A-Za-z0-9_]+(\?[^\s]*)?", dsn)
+    if not match:
+        raise ValueError("MONITORING_POSTGRES_DSN must be postgresql://user:password@host:port/database")
+    if match.group(1) == "postgres":
+        raise ValueError("Use a dedicated pg_monitor role for MONITORING_POSTGRES_DSN, not the superuser")
+    return dsn
+
+
 def prepare(directory):
     keys = (
         "METRICS_TOKEN",
@@ -73,6 +90,7 @@ def prepare(directory):
     # Generated compose.env runs every nonroot service as the preparing UID.
     if os.getuid() == 0 or os.getgid() == 0:
         raise ValueError("Run prepare as the unprivileged monitoring owner, not root")
+    dsn = postgres_dsn()
     path = Path(directory)
     if (
         any(char in str(path) for char in ("\n", "\r", "\x00"))
@@ -111,6 +129,7 @@ def prepare(directory):
     files = {
         "metrics-token": values["METRICS_TOKEN"],
         "grafana-password": values["MONITORING_GRAFANA_PASSWORD"],
+        "postgres-dsn": dsn,
         "loki.yml": loki,
         "thanos.yml": thanos,
     }

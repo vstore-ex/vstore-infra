@@ -245,5 +245,35 @@ class InstallerTests(unittest.TestCase):
             self.assertIn(name, guard)
 
 
+class DatastoreSecretBackfillTests(unittest.TestCase):
+    """Private directories prepared before #74 have no postgres-dsn secret."""
+
+    def host(self, temp):
+        host = Host(temp)
+        private = host.env_file.parent
+        host.env_file.write_text(f'MONITORING_SECRETS_DIR="{private}"\n')
+        return host, private / "postgres-dsn"
+
+    def test_start_adds_the_placeholder_dsn_before_compose(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("monitoring", ROOT / "scripts/monitoring.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with tempfile.TemporaryDirectory() as temp:
+            host, dsn = self.host(temp)
+            result = host.run("start")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(dsn.read_text(), module.POSTGRES_PLACEHOLDER)
+            self.assertEqual(stat.S_IMODE(dsn.stat().st_mode), 0o600)
+
+    def test_start_keeps_an_existing_dsn(self):
+        with tempfile.TemporaryDirectory() as temp:
+            host, dsn = self.host(temp)
+            dsn.write_text("postgresql://vstore_monitor:kept@127.0.0.1:5432/app")
+            result = host.run("start")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(":kept@", dsn.read_text())
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -64,6 +64,45 @@ prometheus.scrape "health" {
   scrape_interval = "30s"
   job_name = "api-health"
 }
+// Datastores (#74). Both listen on loopback only; Alloy shares the host network.
+// The DSN is a private secret for a pg_monitor role; without one, prepare writes a
+// placeholder that reports pg_up 0 so the missing signal stays visible.
+local.file "postgres_dsn" {
+  filename = "/run/secrets/postgres-dsn"
+  is_secret = true
+}
+prometheus.exporter.postgres "postgres" {
+  data_source_names = [local.file.postgres_dsn.content]
+}
+discovery.relabel "postgres_targets" {
+  targets = prometheus.exporter.postgres.postgres.targets
+  rule {
+    target_label = "job"
+    replacement = "postgres"
+  }
+}
+prometheus.scrape "postgres" {
+  targets = discovery.relabel.postgres_targets.output
+  forward_to = [prometheus.remote_write.local.receiver]
+  scrape_interval = "30s"
+  job_name = "postgres"
+}
+prometheus.exporter.redis "redis" {
+  redis_addr = sys.env("MONITORING_REDIS_ADDRESS")
+}
+discovery.relabel "redis_targets" {
+  targets = prometheus.exporter.redis.redis.targets
+  rule {
+    target_label = "job"
+    replacement = "redis"
+  }
+}
+prometheus.scrape "redis" {
+  targets = discovery.relabel.redis_targets.output
+  forward_to = [prometheus.remote_write.local.receiver]
+  scrape_interval = "30s"
+  job_name = "redis"
+}
 discovery.docker "application" {
   host = "unix:///var/run/docker.sock"
   refresh_interval = "15s"

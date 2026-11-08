@@ -108,7 +108,11 @@ def main():
         for group in get(address("prometheus", 9090) + "/api/v1/rules")["data"]["groups"]
         for rule in group["rules"]
     ])
-    assert len(rules) == 10 and "VStoreApiDown" in rules, rules
+    assert len(rules) == 12 and "VStoreApiDown" in rules, rules
+    # Datastores (#74): real exporter results, not merely a successful scrape.
+    eventually(lambda: series('pg_up{job="postgres"} == 1'))
+    eventually(lambda: series('redis_up{job="redis"} == 1'))
+    eventually(lambda: series('pg_stat_database_numbackends{job="postgres",datname="app"}'))
     if sys.platform == "linux":
         eventually(
             lambda: series(

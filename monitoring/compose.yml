@@ -107,6 +107,7 @@ services:
       MONITORING_PROMETHEUS_URL: ${MONITORING_PROMETHEUS_URL:-http://127.0.0.1:${MONITORING_PROMETHEUS_PORT:-19090}/api/v1/write}
       MONITORING_LOKI_URL: ${MONITORING_LOKI_URL:-http://127.0.0.1:${MONITORING_LOKI_PORT:-13100}/loki/api/v1/push}
       MONITORING_API_ADDRESS: ${MONITORING_API_ADDRESS:-127.0.0.1:8080}
+      MONITORING_REDIS_ADDRESS: ${MONITORING_REDIS_ADDRESS:-127.0.0.1:6379}
     volumes:
       - ./config.alloy:/etc/alloy/config.alloy:ro
       - alloy:/var/lib/alloy
@@ -120,7 +121,7 @@ services:
       - /sys:/sys:ro
       - /:/rootfs:ro
       - /var/lib/docker:/var/lib/docker:ro
-    secrets: [metrics-token]
+    secrets: [metrics-token, postgres-dsn]
     network_mode: host
     depends_on:
       init: {condition: service_completed_successfully}
@@ -178,6 +179,8 @@ secrets:
     file: ${MONITORING_SECRETS_DIR:?set absolute private secrets directory}/metrics-token
   grafana-password:
     file: ${MONITORING_SECRETS_DIR:?set absolute private secrets directory}/grafana-password
+  postgres-dsn:
+    file: ${MONITORING_SECRETS_DIR:?set absolute private secrets directory}/postgres-dsn
   thanos.yml:
     file: ${MONITORING_SECRETS_DIR:?set absolute private secrets directory}/thanos.yml
   loki.yml:
