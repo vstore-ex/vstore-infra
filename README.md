@@ -165,9 +165,11 @@ an isolated x86-64 test host on 2026-10-14. All recorded HTTP responses were 200
 all accepted videos finished processing, and no OOM or unexpected restart occurred.
 The experimental candidate also passed the container memory-reserve checks.
 
-For the diploma project, the existing VM is retained; resizing and further load
-tests are not required deliverables. The [test summary](docs/capacity-2026-10-14.md)
-is supporting documentation, not a production capacity guarantee.
+These results did not drive a resize, and further load tests are not required
+diploma deliverables. Production was later resized to `Standard_B2als_v2`
+(~3.78 GiB) for monitoring; the load was not repeated there. The
+[test summary](docs/capacity-2026-10-14.md) is supporting documentation, not a
+production capacity guarantee.
 
 ## Commit messages
 
