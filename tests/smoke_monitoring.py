@@ -100,6 +100,15 @@ def main():
     # Upload/retention health must be observable before a Blob outage loses blocks.
     eventually(lambda: series('up{job="thanos-sidecar"} == 1'))
     eventually(lambda: series('up{job="thanos-compact"} == 1'))
+    # Alerting (#75): Alertmanager is scraped, rules are loaded, I/O pressure exists.
+    eventually(lambda: series('up{job="alertmanager"} == 1'))
+    eventually(lambda: series('node_pressure_io_waiting_seconds_total{job="host"}'))
+    rules = eventually(lambda: [
+        rule["name"]
+        for group in get(address("prometheus", 9090) + "/api/v1/rules")["data"]["groups"]
+        for rule in group["rules"]
+    ])
+    assert len(rules) == 10 and "VStoreApiDown" in rules, rules
     if sys.platform == "linux":
         eventually(
             lambda: series(

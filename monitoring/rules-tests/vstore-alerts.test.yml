@@ -1,0 +1,187 @@
+# promtool test rules monitoring/rules-tests/vstore-alerts.test.yml
+# Kept outside rules/: Prometheus loads every *.yml there as a rule file.
+rule_files: [../rules/vstore-alerts.yml]
+evaluation_interval: 1m
+
+tests:
+  # API reachability: down after 2 minutes, unknown when the probe is absent.
+  - interval: 1m
+    input_series:
+      - series: 'probe_success{job="api-health",instance="health"}'
+        values: '1 1 1 0 0 0 0 0'
+    alert_rule_test:
+      - {eval_time: 4m, alertname: VStoreApiDown, exp_alerts: []}
+      - eval_time: 6m
+        alertname: VStoreApiDown
+        exp_alerts:
+          - exp_labels: {severity: critical, job: api-health, instance: health}
+            exp_annotations:
+              summary: VStore API health probe is failing
+              runbook: monitoring/README.md#alert-runbook
+      - {eval_time: 6m, alertname: VStoreApiHealthUnknown, exp_alerts: []}
+
+  - interval: 1m
+    input_series:
+      - series: 'up{job="host"}'
+        values: '1x20'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: VStoreApiHealthUnknown
+        exp_alerts:
+          - exp_labels: {severity: warning, job: api-health}
+            exp_annotations:
+              summary: No API health probe results; API state is unknown, not healthy
+              runbook: monitoring/README.md#alert-runbook
+
+  # Failed scrapes keep their job label.
+  - interval: 1m
+    input_series:
+      - series: 'up{job="api",instance="127.0.0.1:8080"}'
+        values: '1 1 0 0 0 0 0 0 0'
+      - series: 'up{job="host",instance="host"}'
+        values: '1x8'
+    alert_rule_test:
+      - {eval_time: 5m, alertname: VStoreScrapeFailing, exp_alerts: []}
+      - eval_time: 8m
+        alertname: VStoreScrapeFailing
+        exp_alerts:
+          - exp_labels: {severity: warning, job: api, instance: 127.0.0.1:8080}
+            exp_annotations:
+              summary: A monitoring scrape target is failing
+              runbook: monitoring/README.md#alert-runbook
+
+  # 5xx ratio above 5% with real traffic for 10 minutes.
+  - interval: 1m
+    input_series:
+      - series: 'vstore_http_requests_total{job="api",route="/x",method="GET",status="200"}'
+        values: '0+54x20'
+      - series: 'vstore_http_requests_total{job="api",route="/x",method="GET",status="500"}'
+        values: '0+6x20'
+    alert_rule_test:
+      - {eval_time: 9m, alertname: VStoreHighErrorRate, exp_alerts: []}
+      - eval_time: 16m
+        alertname: VStoreHighErrorRate
+        exp_alerts:
+          - exp_labels: {severity: critical}
+            exp_annotations:
+              summary: More than 5% of API requests fail with 5xx
+              runbook: monitoring/README.md#alert-runbook
+
+  # A few 5xx on almost no traffic are not an incident.
+  - interval: 1m
+    input_series:
+      - series: 'vstore_http_requests_total{job="api",route="/x",method="GET",status="500"}'
+        values: '0+1x20'
+    alert_rule_test:
+      - {eval_time: 16m, alertname: VStoreHighErrorRate, exp_alerts: []}
+
+  # p95 latency above 1 s for 10 minutes.
+  - interval: 1m
+    input_series:
+      - series: 'vstore_http_request_duration_seconds_bucket{job="api",le="0.5"}'
+        values: '0+10x20'
+      - series: 'vstore_http_request_duration_seconds_bucket{job="api",le="2.5"}'
+        values: '0+100x20'
+      - series: 'vstore_http_request_duration_seconds_bucket{job="api",le="+Inf"}'
+        values: '0+100x20'
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: VStoreSlowResponses
+        exp_alerts:
+          - exp_labels: {severity: warning}
+            exp_annotations:
+              summary: API p95 latency is above 1 second
+              runbook: monitoring/README.md#alert-runbook
+
+  # Root filesystem below 10% free for 15 minutes.
+  - interval: 1m
+    input_series:
+      - series: 'node_filesystem_avail_bytes{job="host",mountpoint="/",fstype="ext4",device="/dev/sda1"}'
+        values: '2e9x20'
+      - series: 'node_filesystem_size_bytes{job="host",mountpoint="/",fstype="ext4",device="/dev/sda1"}'
+        values: '30e9x20'
+    alert_rule_test:
+      - {eval_time: 10m, alertname: VMDiskSpaceLow, exp_alerts: []}
+      - eval_time: 16m
+        alertname: VMDiskSpaceLow
+        exp_alerts:
+          - exp_labels: {severity: critical, job: host, mountpoint: /, fstype: ext4, device: /dev/sda1}
+            exp_annotations:
+              summary: VM root filesystem has less than 10% free space
+              runbook: monitoring/README.md#alert-runbook
+
+  - interval: 1m
+    input_series:
+      - series: 'node_memory_MemAvailable_bytes{job="host"}'
+        values: '300e6x20'
+      - series: 'node_memory_MemTotal_bytes{job="host"}'
+        values: '4e9x20'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: VMMemoryLow
+        exp_alerts:
+          - exp_labels: {severity: critical, job: host}
+            exp_annotations:
+              summary: VM has less than 10% memory available
+              runbook: monitoring/README.md#alert-runbook
+
+  # I/O stall above 20% of the time (same limit as the watchdog), for 10 minutes.
+  - interval: 1m
+    input_series:
+      - series: 'node_pressure_io_waiting_seconds_total{job="host"}'
+        values: '0+15x20'
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: VMIOPressureHigh
+        exp_alerts:
+          - exp_labels: {severity: warning, job: host}
+            exp_annotations:
+              summary: VM processes are stalled on disk I/O more than 20% of the time
+              runbook: monitoring/README.md#alert-runbook
+
+  - interval: 1m
+    input_series:
+      - series: 'node_pressure_io_waiting_seconds_total{job="host"}'
+        values: '0+3x20'
+    alert_rule_test:
+      - {eval_time: 16m, alertname: VMIOPressureHigh, exp_alerts: []}
+
+  # Blob upload: none since start for over 4 h (first block needs ~3 h).
+  - interval: 1m
+    input_series:
+      - series: 'process_start_time_seconds{job="thanos-sidecar"}'
+        values: '0x300'
+      - series: 'thanos_objstore_bucket_last_successful_upload_time{job="thanos-sidecar",bucket="b"}'
+        values: '0x300'
+    alert_rule_test:
+      - {eval_time: 3h50m, alertname: MetricsBlobUploadStale, exp_alerts: []}
+      - eval_time: 4h20m
+        alertname: MetricsBlobUploadStale
+        exp_alerts:
+          - exp_labels: {severity: warning}
+            exp_annotations:
+              summary: No metric block reached Azure Blob for over 4 hours
+              runbook: monitoring/README.md#alert-runbook
+
+  # Uploads keep succeeding every 2 h: never stale.
+  - interval: 1m
+    input_series:
+      - series: 'process_start_time_seconds{job="thanos-sidecar"}'
+        values: '0x560'
+      - series: 'thanos_objstore_bucket_last_successful_upload_time{job="thanos-sidecar",bucket="b"}'
+        values: '0x180 10800x120 18000x120 25200x140'
+    alert_rule_test:
+      - {eval_time: 9h, alertname: MetricsBlobUploadStale, exp_alerts: []}
+
+  - interval: 1m
+    input_series:
+      - series: 'thanos_shipper_upload_failures_total{job="thanos-sidecar"}'
+        values: '0 0 1 1 1'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: MetricsBlobUploadFailing
+        exp_alerts:
+          - exp_labels: {severity: warning, job: thanos-sidecar}
+            exp_annotations:
+              summary: Metric block uploads to Azure Blob are failing
+              runbook: monitoring/README.md#alert-runbook

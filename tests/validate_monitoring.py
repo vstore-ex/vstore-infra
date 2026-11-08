@@ -34,6 +34,13 @@ def main():
             env=env,
             check=True,
         )
+        telegram = Path(temp) / "telegram"
+        subprocess.run(
+            [sys.executable, str(ROOT / "scripts/monitoring.py"), "prepare", "--directory", str(telegram)],
+            env={**env, "MONITORING_TELEGRAM_BOT_TOKEN": "123456:validation-only",
+                 "MONITORING_TELEGRAM_CHAT_ID": "-1000000000000"},
+            check=True,
+        )
         config = json.loads(
             subprocess.check_output(
                 [
@@ -56,6 +63,16 @@ def main():
                 "/bin/promtool",
                 ["check", "config", "/etc/monitoring/prometheus.yml"],
             ),
+            ("prometheus", "/bin/promtool", ["check", "rules", "/etc/monitoring/rules/vstore-alerts.yml"]),
+            ("prometheus", "/bin/promtool", ["test", "rules", "/etc/monitoring/rules-tests/vstore-alerts.test.yml"]),
+            ("alertmanager", "/bin/amtool", ["check-config", "/etc/monitoring/alertmanager/alertmanager.yml"]),
+            # Private Telegram variant from `prepare`, with dummy values.
+            ("alertmanager", "/bin/amtool", ["check-config", "/run/telegram/alertmanager.yml"]),
+            ("alertmanager", "/bin/amtool", [
+                "template", "render",
+                "--template.glob=/etc/monitoring/alertmanager/telegram.tmpl",
+                '--template.text={{ template "vstore.telegram" . }}',
+            ]),
             ("alloy", "/bin/alloy", ["validate", "/etc/monitoring/config.alloy"]),
             (
                 "loki",
@@ -81,6 +98,11 @@ def main():
                     str(ROOT / "monitoring") + ":/etc/monitoring:ro",
                     "-v",
                     str(private) + ":/run/secrets:ro",
+                    "-v",
+                    str(telegram) + ":/run/telegram:ro",
+                    # Same rule path as the running Prometheus, so `check config` loads the rules.
+                    "-v",
+                    str(ROOT / "monitoring/rules") + ":/etc/prometheus/rules:ro",
                     "-e",
                     "MONITORING_PROMETHEUS_URL=http://127.0.0.1:9/api/v1/write",
                     "-e",
@@ -94,7 +116,7 @@ def main():
                 ],
                 check=True,
             )
-    print("PASS: official Prometheus, Alloy and Loki validators")
+    print("PASS: official Prometheus, rule-test, Alertmanager, Alloy and Loki validators")
 
 
 if __name__ == "__main__":

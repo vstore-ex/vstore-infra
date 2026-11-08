@@ -18,8 +18,8 @@ prometheus.exporter.unix "host" {
   procfs_path = "/host/proc"
   sysfs_path = "/sys"
   rootfs_path = "/rootfs"
-  enable_collectors = ["cpu", "meminfo", "filesystem", "netdev", "loadavg"]
-  set_collectors = ["cpu", "meminfo", "filesystem", "netdev", "loadavg"]
+  enable_collectors = ["cpu", "meminfo", "filesystem", "netdev", "loadavg", "pressure"]
+  set_collectors = ["cpu", "meminfo", "filesystem", "netdev", "loadavg", "pressure"]
 }
 prometheus.scrape "host" {
   targets = discovery.relabel.host_targets.output
