@@ -377,3 +377,6 @@ jobs:
             fi
 
             echo "==> Infra stack config applied successfully at $DEPLOY_SHA."
+
+            # Opt-in monitoring follows the deployed config; it never fails the deployment.
+            bash scripts/monitoring-deploy.sh "$PREV_GIT_COMMIT" "$DEPLOY_SHA" || echo "::warning::Monitoring update step failed; the application deployment is unaffected."
