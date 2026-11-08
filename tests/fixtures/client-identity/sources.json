@@ -8,8 +8,8 @@
   "frontend.conf": {
     "repository": "vstore-front",
     "path": "nginx/default.conf.template",
-    "commit": "6e070f69ea1e9fc46389ed56539ff50bbadaddaa",
-    "sha256": "546900078e57d61ba48007ceb9f9c11a437a2f30f018dbd2f6174cceae5b4735"
+    "commit": "a79375fc10cdd99cfa364c4def4cf29fae1b3e33",
+    "sha256": "6177baa92b5e97a76701ce1f5bd9737890610d01edf8ba550a659e9fa0a3ed36"
   },
   "admin.conf": {
     "repository": "vstore-admin",
