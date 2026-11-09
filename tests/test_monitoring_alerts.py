@@ -56,6 +56,19 @@ class AlertingStackTests(unittest.TestCase):
         for name, service in guarded.items():
             self.assertEqual(service.get("cgroup_parent"), "vstore-monitoring.slice", name)
 
+    def test_only_query_joins_the_application_network_and_publishes_no_port(self):
+        config = compose_config("production.yml")
+        self.assertEqual(config["networks"]["app"]["name"], "vstore_app_net")
+        self.assertTrue(config["networks"]["app"]["external"])
+        joined = [name for name, service in config["services"].items()
+                  if "app" in (service.get("networks") or {})]
+        self.assertEqual(joined, ["query"])
+        query = config["services"]["query"]
+        self.assertEqual(query["networks"]["app"]["aliases"], ["monitoring-query"])
+        self.assertIn("monitoring", query["networks"])
+        self.assertNotIn("ports", query)
+        self.assertNotIn("app", compose_config()["networks"])
+
     def test_prometheus_evaluates_rules_and_notifies_alertmanager(self):
         config = (ROOT / "monitoring/prometheus.yml").read_text()
         self.assertIn("/etc/prometheus/rules/*.yml", config)

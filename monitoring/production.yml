@@ -8,9 +8,18 @@ services:
   prometheus: {<<: *guard}
   sidecar: {<<: *guard}
   store: {<<: *guard}
-  query: {<<: *guard}
+  query:
+    <<: *guard
+    # The backend reads chart data for the admin Monitoring page from this read-only query API.
+    networks:
+      monitoring: {}
+      app: {aliases: [monitoring-query]}
   compact: {<<: *guard}
   loki: {<<: *guard}
   alloy: {<<: *guard}
   grafana: {<<: *guard}
   alertmanager: {<<: *guard}
+networks:
+  app:
+    external: true
+    name: ${VSTORE_COMPOSE_PROJECT:-vstore}_app_net

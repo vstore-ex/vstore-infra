@@ -116,6 +116,8 @@ services:
     environment:
       <<: *backend-env
       METRICS_TOKEN: ${METRICS_TOKEN:-}
+      # Thanos Query joins app_net under this alias when monitoring runs; otherwise the page reports it as down.
+      MONITORING_QUERY_URL: ${MONITORING_QUERY_URL:-http://monitoring-query:10902}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       EMAIL_FROM: ${EMAIL_FROM:-}
       PORT: 8080

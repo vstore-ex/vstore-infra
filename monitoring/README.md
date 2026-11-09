@@ -88,6 +88,21 @@ IDs remain parsed fields, not stream labels. Thanos Query is the metrics datasou
 so recent and Blob history share one interface. Grafana metadata persists in its
 local volume (SQLite, single instance); dashboards/datasources are provisioned.
 
+## Admin Monitoring page
+
+With `production.yml`, Thanos Query also joins the application network
+(`${VSTORE_COMPOSE_PROJECT}_app_net`) under the alias `monitoring-query`. The backend
+reads a fixed list of chart queries from `http://monitoring-query:10902`
+(`MONITORING_QUERY_URL` in the application `.env`; empty switches the page off) and
+serves them to administrators at `/api/v1/admin/monitoring`. No port is published and
+Grafana stays on loopback. Every container on `app_net` can read metrics from the alias;
+Query accepts no writes.
+
+The application network must exist before monitoring starts, and `docker compose down`
+on the application project cannot remove it while Query is attached: stop monitoring
+first. When monitoring is stopped the alias does not resolve and the page reports
+monitoring as unavailable.
+
 ## Collector exception for review
 
 Alloy is the **only privileged collector exception**. cAdvisor requires Linux
