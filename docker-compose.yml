@@ -302,12 +302,15 @@ services:
     volumes:
       - certbot_certs:/etc/letsencrypt
       - certbot_webroot:/var/www/certbot
+    # Own network: renewals need the internet, never Postgres or Redis on app_net.
     networks:
-      - app_net
+      - certbot_net
     entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 1h & wait $${!}; done'"
 
 networks:
   app_net:
+    driver: bridge
+  certbot_net:
     driver: bridge
   # Exact proxy addresses are trusted; other containers and the bridge gateway are not.
   proxy_net:
