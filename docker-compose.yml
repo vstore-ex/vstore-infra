@@ -17,8 +17,9 @@ x-backend-env: &backend-env
   ADMIN_EMAIL: ${ADMIN_EMAIL:?set in .env}
   ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set in .env}
   AZURE_STORAGE_CONNECTION_STRING: ${AZURE_STORAGE_CONNECTION_STRING:-}
-  CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
-  CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
+  # Always the bundled Redis with its password; stale .env CELERY_* values must not bypass auth.
+  CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:?set in .env}@redis:6379/0
+  CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:?set in .env}@redis:6379/0
   GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
   GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
   GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-}
@@ -67,11 +68,21 @@ services:
           echo 'ERROR: RDB-only Redis requires reviewed live AOF adoption first.' >&2
           exit 1
         fi
-        exec /usr/local/bin/docker-entrypoint.sh redis-server \
+        # The password goes in via stdin so it never appears in the process list.
+        # Compose requires REDIS_PASSWORD; only bare fixtures run without one.
+        auth=''
+        [ -z "$${REDIS_PASSWORD:-}" ] || auth="requirepass $$REDIS_PASSWORD"
+        exec /usr/local/bin/docker-entrypoint.sh redis-server - \
           --dir /data --appendonly yes --appendfsync everysec \
           --no-appendfsync-on-rewrite no --aof-load-truncated no \
           --save '' --maxmemory 64mb --maxmemory-policy noeviction \
-          --auto-aof-rewrite-percentage 100 --auto-aof-rewrite-min-size 64mb
+          --auto-aof-rewrite-percentage 100 --auto-aof-rewrite-min-size 64mb <<EOF
+        $$auth
+        EOF
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set in .env}
+      # redis-cli (healthcheck, ops scripts via docker exec) authenticates from this.
+      REDISCLI_AUTH: ${REDIS_PASSWORD:?set in .env}
     restart: unless-stopped
     logging: *default-logging
     deploy:

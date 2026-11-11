@@ -34,7 +34,7 @@ Reverse proxy (nginx) lives **inside the `frontend`/`admin` images** — edge TL
 - Only `frontend` (`3000`) and `admin` (`3001`) may bind `0.0.0.0`.
 
 ### 🔒 3. Fail-Fast Secrets
-- `POSTGRES_PASSWORD`, `DATABASE_URL`, `SECRET_KEY`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` use `:?` interpolation — no defaults. Never add weak defaults back.
+- `POSTGRES_PASSWORD`, `DATABASE_URL`, `SECRET_KEY`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `REDIS_PASSWORD` use `:?` interpolation — no defaults. Never add weak defaults back.
 
 ### 🔒 4. Container Hardening
 - App services carry `cap_drop: [ALL]` + `no-new-privileges` (see `x-hardening` anchor). New app services must include the anchor. PostgreSQL/Redis are exempt (privileged init).
