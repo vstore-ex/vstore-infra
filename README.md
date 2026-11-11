@@ -137,7 +137,7 @@ docker compose config --quiet     # validate config before PRs
 * `build-and-push.yml` — **reusable** build job (`workflow_call`) used by all app repos: Buildx + GHA cache, Trivy scan, push to the caller's GHCR namespace, outputs the image digest.
 * `deploy-service.yml` — **reusable** deploy job used by all app repos: refuses to run if the currently running container's image has no registry digest (`RepoDigests` — no valid rollback target), pulls the digest-pinned image, optionally runs Alembic migrations behind a `pg_dump` snapshot, `up -d --wait`, health-check gate, automated rollback to the previous image digest (image only — schema restore is manual, commands are printed by the job).
 
-App repos call these via `uses: vstore-ex/vstore-infra/.github/workflows/<file>.yml@main` with `secrets: inherit`. Requires the org setting *Actions → Allow reusable workflows from private repositories* for this org — without it every cross-repo call fails at workflow startup. This setting is the single dependency of the whole deduplicated CI layout.
+App repos call these via `uses: vstore-ex/vstore-infra/.github/workflows/<file>.yml@<commit-sha>` with `secrets: inherit`. The SHA pin keeps the production SSH key away from unreviewed workflow code; bump it in all three app repos after changing these workflows. Requires the org setting *Actions → Allow reusable workflows from private repositories* for this org — without it every cross-repo call fails at workflow startup. This setting is the single dependency of the whole deduplicated CI layout.
 
 ## 8. Production Host Layout
 
