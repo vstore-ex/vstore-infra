@@ -64,8 +64,8 @@ server {
     # HTTP Strict Transport Security — instructs browsers to always use HTTPS
     add_header Strict-Transport-Security "max-age=15768000; includeSubDomains" always;
 
-    # Match application maximum body payload limit
-    client_max_body_size 150M;
+    # Storefront nginx caps bodies at 15M; nothing larger can succeed.
+    client_max_body_size 15M;
 
     limit_req zone=edge_req burst=100 nodelay;
     limit_conn edge_conn 50;
@@ -104,7 +104,7 @@ server {
     # HTTP Strict Transport Security — instructs browsers to always use HTTPS
     add_header Strict-Transport-Security "max-age=15768000; includeSubDomains" always;
 
-    # Match application maximum body payload limit
+    # Admin video uploads need the larger limit.
     client_max_body_size 150M;
 
     limit_req zone=edge_req burst=100 nodelay;
