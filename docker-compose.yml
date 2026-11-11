@@ -55,7 +55,7 @@ services:
       retries: 5
 
   redis:
-    image: redis:7.2-alpine@sha256:29e8589c3f9ba699b5f7aa4b3c7733c58852a3626439e619aa0ee78de08c6ca0
+    image: redis:8.8-alpine@sha256:c027ae0f677dcf73d74038256f5b88c9ba7b11ccbfae97e96a9f091208d36125
     labels:
       vstore.redis.policy: a07-v1
     # Convert the live dataset before recreating an existing RDB-only instance.
