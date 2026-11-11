@@ -17,8 +17,9 @@ x-backend-env: &backend-env
   ADMIN_EMAIL: ${ADMIN_EMAIL:?set in .env}
   ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set in .env}
   AZURE_STORAGE_CONNECTION_STRING: ${AZURE_STORAGE_CONNECTION_STRING:-}
-  CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
-  CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
+  # Always the bundled Redis with its password; stale .env CELERY_* values must not bypass auth.
+  CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:?set in .env}@redis:6379/0
+  CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:?set in .env}@redis:6379/0
   GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
   GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
   GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-}
@@ -29,7 +30,7 @@ x-backend-env: &backend-env
 
 services:
   postgres:
-    image: postgres:17
+    image: postgres:17@sha256:f4c66b820c6f974249089d3d16d86a3698eae11e8746eb6644b2271031e91232
     restart: unless-stopped
     logging: *default-logging
     deploy:
@@ -54,7 +55,7 @@ services:
       retries: 5
 
   redis:
-    image: redis:7.2-alpine
+    image: redis:7.2-alpine@sha256:29e8589c3f9ba699b5f7aa4b3c7733c58852a3626439e619aa0ee78de08c6ca0
     labels:
       vstore.redis.policy: a07-v1
     # Convert the live dataset before recreating an existing RDB-only instance.
@@ -67,11 +68,21 @@ services:
           echo 'ERROR: RDB-only Redis requires reviewed live AOF adoption first.' >&2
           exit 1
         fi
-        exec /usr/local/bin/docker-entrypoint.sh redis-server \
+        # The password goes in via stdin so it never appears in the process list.
+        # Compose requires REDIS_PASSWORD; only bare fixtures run without one.
+        auth=''
+        [ -z "$${REDIS_PASSWORD:-}" ] || auth="requirepass $$REDIS_PASSWORD"
+        exec /usr/local/bin/docker-entrypoint.sh redis-server - \
           --dir /data --appendonly yes --appendfsync everysec \
           --no-appendfsync-on-rewrite no --aof-load-truncated no \
           --save '' --maxmemory 64mb --maxmemory-policy noeviction \
-          --auto-aof-rewrite-percentage 100 --auto-aof-rewrite-min-size 64mb
+          --auto-aof-rewrite-percentage 100 --auto-aof-rewrite-min-size 64mb <<EOF
+        $$auth
+        EOF
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set in .env}
+      # redis-cli (healthcheck, ops scripts via docker exec) authenticates from this.
+      REDISCLI_AUTH: ${REDIS_PASSWORD:?set in .env}
     restart: unless-stopped
     logging: *default-logging
     deploy:
@@ -280,7 +291,7 @@ services:
 
   certbot:
     <<: *default-hardening
-    image: certbot/certbot:v3.1.0
+    image: certbot/certbot:v3.1.0@sha256:fb978b4fef92dc5c85cc0b908836714c600e717b52a3f74c93276eb63a9d0af9
     restart: unless-stopped
     logging: *default-logging
     deploy:
@@ -291,12 +302,15 @@ services:
     volumes:
       - certbot_certs:/etc/letsencrypt
       - certbot_webroot:/var/www/certbot
+    # Own network: renewals need the internet, never Postgres or Redis on app_net.
     networks:
-      - app_net
+      - certbot_net
     entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 1h & wait $${!}; done'"
 
 networks:
   app_net:
+    driver: bridge
+  certbot_net:
     driver: bridge
   # Exact proxy addresses are trusted; other containers and the bridge gateway are not.
   proxy_net:

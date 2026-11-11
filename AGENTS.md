@@ -34,7 +34,7 @@ Reverse proxy (nginx) lives **inside the `frontend`/`admin` images** — edge TL
 - Only `frontend` (`3000`) and `admin` (`3001`) may bind `0.0.0.0`.
 
 ### 🔒 3. Fail-Fast Secrets
-- `POSTGRES_PASSWORD`, `DATABASE_URL`, `SECRET_KEY`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` use `:?` interpolation — no defaults. Never add weak defaults back.
+- `POSTGRES_PASSWORD`, `DATABASE_URL`, `SECRET_KEY`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `REDIS_PASSWORD` use `:?` interpolation — no defaults. Never add weak defaults back.
 
 ### 🔒 4. Container Hardening
 - App services carry `cap_drop: [ALL]` + `no-new-privileges` (see `x-hardening` anchor). New app services must include the anchor. PostgreSQL/Redis are exempt (privileged init).
@@ -74,7 +74,7 @@ All production images come from GHCR. Infra CI builds the edge from `config/ngin
 
 ## 5. Deployment Model
 
-- App repos: `ci.yml` calls `vstore-infra/.github/workflows/build-and-push.yml@main` then `deploy-service.yml@main` (`secrets: inherit`). Digest-pinned, flock-serialized, health-gated, auto-rollback to previous digest.
+- App repos: `ci.yml` calls `vstore-infra/.github/workflows/build-and-push.yml` then `deploy-service.yml`, pinned to an infra commit SHA (`secrets: inherit`); bump the SHA in all three app repos after changing these workflows. Digest-pinned, flock-serialized, health-gated, auto-rollback to previous digest.
 - This repo: `ci.yml` validates Compose and scans the edge, then publishes and deploys its immutable digest with config in **`~/vstore`** on the host (override with `DEPLOY_PATH` secret). The clone must remain clean. Preserve application pins; publish edge state only after HTTPS API/image verification. Failure restores config and the previous edge artifact without rebuilding.
 - Host preconditions: Docker Compose **v2 plugin**, `docker login ghcr.io` (PAT with `read:packages`), `~/vstore/.env` with all fail-fast variables (`DATABASE_URL` must use the service-name host `@postgres:5432/...` and an existing database name; `POSTGRES_DB` only applies at first-volume init), storage dir owned by UID `10001`.
 - Release tooling also requires Python 3. Adopt verified running images before rollout; infrastructure CD bootstraps a missing release state before convergence and fails if adoption cannot verify every application image. Use the manual wrapper to share `.deploy.lock`; plain Compose reads the persisted override but does not lock.

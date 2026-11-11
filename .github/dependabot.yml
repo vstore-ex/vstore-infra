@@ -1,0 +1,11 @@
+# Images are pinned by digest; this keeps the digests current.
+version: 2
+updates:
+  - package-ecosystem: docker
+    directory: /config/nginx
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
