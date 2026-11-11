@@ -30,7 +30,7 @@ x-backend-env: &backend-env
 
 services:
   postgres:
-    image: postgres:17@sha256:f4c66b820c6f974249089d3d16d86a3698eae11e8746eb6644b2271031e91232
+    image: postgres:18@sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42
     restart: unless-stopped
     logging: *default-logging
     deploy:
