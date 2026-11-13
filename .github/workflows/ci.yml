@@ -98,6 +98,8 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Verify private ports and fail-closed preparation
         run: python3 -m unittest discover -s tests -p 'test_monitoring*.py' -v
+      - name: Check Blob outage drill analysis
+        run: python3 -m unittest discover -s tests -p 'test_drill_blob_outage.py' -v
       - name: Run official validators without network or host collector privileges
         run: python3 tests/validate_monitoring.py
       - name: Prove alert grouping and inhibition against a local receiver
