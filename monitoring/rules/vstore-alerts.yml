@@ -22,6 +22,24 @@ groups:
           summary: No API health probe results; API state is unknown, not healthy
           runbook: monitoring/README.md#alert-runbook
 
+      # The exporter scrape succeeds even when the datastore is unreachable, so
+      # `up` stays 1; the exporter's own *_up gauge carries the state.
+      - alert: VStorePostgresDown
+        expr: pg_up{job="postgres"} == 0 or absent(pg_up{job="postgres"})
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: PostgreSQL is unreachable from the exporter, or no PostgreSQL signal exists
+          runbook: monitoring/README.md#alert-runbook
+
+      - alert: VStoreRedisDown
+        expr: redis_up{job="redis"} == 0 or absent(redis_up{job="redis"})
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: Redis is unreachable from the exporter, or no Redis signal exists
+          runbook: monitoring/README.md#alert-runbook
+
       - alert: VStoreScrapeFailing
         expr: up == 0
         for: 5m

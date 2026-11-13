@@ -25,6 +25,18 @@ oom_kills() {
   sed -n 's/^oom_kill //p' "$slice_dir/memory.events" 2>/dev/null || echo 0
 }
 
+# Directories prepared before #74 lack postgres-dsn; Compose refuses a missing
+# secret file. Add the placeholder (same value as scripts/monitoring.py), which
+# reports PostgreSQL as missing until a pg_monitor DSN is prepared.
+backfill_secrets() {
+  local dir
+  dir=$(sed -n 's/^MONITORING_SECRETS_DIR=//p' "$env_file" | tail -1)
+  dir=${dir#\"}; dir=${dir%\"}
+  [[ -d $dir && ! -e $dir/postgres-dsn ]] || return 0
+  (umask 077; printf '%s' 'postgresql://monitoring-not-configured@127.0.0.1:1/postgres?sslmode=disable' > "$dir/postgres-dsn")
+  echo "Added placeholder postgres-dsn; PostgreSQL signals stay missing until a DSN is prepared"
+}
+
 start() {
   [[ -f $env_file ]] || { echo "Missing private monitoring env file: $env_file" >&2; exit 1; }
   # Let the application finish booting before monitoring competes for memory and disk.
@@ -34,6 +46,7 @@ start() {
     sleep 5
   done
   bash "$root/scripts/monitoring-guard.sh" check
+  backfill_secrets
   mkdir -p "$state_dir"
   oom_kills > "$state_dir/oom-baseline"
   compose up -d --wait

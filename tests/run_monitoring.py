@@ -41,6 +41,10 @@ def main():
             return sock.getsockname()[1]
 
     grafana_port, prom_port, loki_port = free_port(), free_port(), free_port()
+    postgres_port, redis_port = free_port(), free_port()
+    # Linux Alloy shares the host network; Docker Desktop Alloy joins the app network.
+    datastore = "postgres:5432" if sys.platform == "darwin" else f"127.0.0.1:{postgres_port}"
+    redis_address = "redis:6379" if sys.platform == "darwin" else f"127.0.0.1:{redis_port}"
     project = "vstore-obs-" + uuid.uuid4().hex[:8]
     key = base64.b64encode(b"x" * 32).decode()
     conn = f"DefaultEndpointsProtocol=http;AccountName=localaccount;AccountKey={key};BlobEndpoint=http://azurite:10000/localaccount;"
@@ -54,6 +58,7 @@ def main():
             "MONITORING_METRICS_CONNECTION_STRING": conn,
             "MONITORING_LOGS_CONTAINER": "vstore-obs-logs",
             "MONITORING_METRICS_CONTAINER": "vstore-obs-metrics",
+            "MONITORING_POSTGRES_DSN": f"postgresql://vstore_monitor:local-test-only@{datastore}/app?sslmode=disable",
         }
         subprocess.run(
             [
@@ -69,11 +74,11 @@ def main():
         smoke.ENV_FILE = secret_dir / "compose.env"
         with smoke.ENV_FILE.open("a") as out:
             out.write(
-                f"OBS_AZURITE_ACCOUNTS=localaccount:{key}\nOBS_BACKEND_CONTEXT={context}\nOBS_FIXTURE_DOCKERFILE={ROOT}/tests/fixtures/monitoring/Dockerfile\nOBS_CONFIG_ROOT={ROOT}/monitoring\nCOMPOSE_PROJECT_NAME={project}\nMONITORING_GRAFANA_PORT={grafana_port}\nMONITORING_PROMETHEUS_PORT={prom_port}\nMONITORING_LOKI_PORT={loki_port}\n"
+                f"OBS_AZURITE_ACCOUNTS=localaccount:{key}\nOBS_BACKEND_CONTEXT={context}\nOBS_FIXTURE_DOCKERFILE={ROOT}/tests/fixtures/monitoring/Dockerfile\nOBS_CONFIG_ROOT={ROOT}/monitoring\nCOMPOSE_PROJECT_NAME={project}\nMONITORING_GRAFANA_PORT={grafana_port}\nMONITORING_PROMETHEUS_PORT={prom_port}\nMONITORING_LOKI_PORT={loki_port}\nOBS_POSTGRES_PORT={postgres_port}\nOBS_REDIS_PORT={redis_port}\nMONITORING_REDIS_ADDRESS={redis_address}\n"
             )
         try:
             smoke.compose("build", "backend")
-            smoke.compose("up", "-d", "backend", "azurite", "prometheus")
+            smoke.compose("up", "-d", "backend", "azurite", "prometheus", "postgres", "redis")
             emulator = smoke.compose("port", "azurite", "10000")
             assert emulator.startswith("127.0.0.1:")
             local = conn.replace("azurite:10000", emulator)

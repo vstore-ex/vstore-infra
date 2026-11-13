@@ -6,6 +6,7 @@ services:
       MONITORING_PROMETHEUS_URL: http://prometheus:9090/api/v1/write
       MONITORING_LOKI_URL: http://loki:3100/loki/api/v1/push
       MONITORING_API_ADDRESS: backend:8000
+      MONITORING_REDIS_ADDRESS: redis:6379
     # Docker Desktop cannot validate Linux host mounts: use container proc/rootfs here.
     volumes: !override
       - ${OBS_CONFIG_ROOT:?}/config.alloy:/etc/alloy/config.alloy:ro

@@ -16,6 +16,19 @@ services:
     logging:
       driver: json-file
       options: {max-size: "5m", max-file: "2"}
+  # Datastores for the #74 exporters; fixture-only credentials.
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: vstore_monitor
+      POSTGRES_PASSWORD: local-test-only
+      POSTGRES_DB: app
+    ports: ["127.0.0.1:${OBS_POSTGRES_PORT:-15432}:5432"]
+    networks: [application]
+  redis:
+    image: redis:7-alpine
+    ports: ["127.0.0.1:${OBS_REDIS_PORT:-16379}:6379"]
+    networks: [application]
   azurite:
     image: mcr.microsoft.com/azure-storage/azurite:3.35.0
     command: [azurite-blob, --blobHost, 0.0.0.0, --skipApiVersionCheck, --location, /data]
